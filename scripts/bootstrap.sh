@@ -176,7 +176,7 @@ cat <<EOF
          - Santa / santad (usually listed after step b)
          - BlockBlock
          - your terminal app (only needed for the TCC part of 'bastion posture')
-       Then restart osquery:  sudo launchctl kickstart -k system/io.osquery.agent
+       (The script restarts osquery for you when you press Return.)
     d) iPhone: install the "ntfy" app, add a subscription to server ntfy.sh, topic:
          ${TOPIC:-<see notify.ntfy_topic in $CONF>}
 EOF
@@ -187,6 +187,8 @@ fi
 if [[ -t 0 && $DRY -eq 0 ]]; then
   read -r -p "    Press Return when you've done a-d (or Ctrl-C to finish later)... " _
 fi
+# osqueryd only picks up a new Full Disk Access grant when it restarts.
+run sudo launchctl kickstart -k system/io.osquery.agent || warn "couldn't restart osquery"
 
 # ---- 7. phase 0 checks ----------------------------------------------------------------
 if [[ $NO_CHECKS -eq 0 ]]; then

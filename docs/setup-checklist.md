@@ -13,27 +13,29 @@ cd bastion
 ./scripts/bootstrap.sh
 ```
 
-It installs everything, then pauses at **step 6** for the approvals below. Use `--dry-run`
-first if you want to see every command before anything runs.
+It asks for your password at the start, and again during the BlockBlock install (its
+Homebrew installer prompts separately). Then it pauses at **step 6** for the approvals
+below. Use `--dry-run` first if you want to see every command before anything runs.
 
 ## 2. Approvals (the script opens the right panes)
 
-- [ ] **Santa profile**: System Settings → General → Device Management → *Bastion: Santa Configuration* → Install
+- [ ] **Santa profile**: System Settings → **Profile Downloaded** (in the sidebar under your name) → *Bastion: Santa Configuration* → Install
 - [ ] **System extensions**: General → Login Items & Extensions
   - Endpoint Security Extensions: **Santa**, **BlockBlock** on
   - Network Extensions: **LuLu** on
 - [ ] Open **LuLu** and **BlockBlock** once from /Applications to finish their setup. In LuLu's settings, turn on **Passive mode** for the shadow week so it doesn't prompt for every connection.
 - [ ] **Full Disk Access** (Privacy & Security → Full Disk Access): `osqueryd` (at `/opt/osquery/lib/osquery.app`), Santa, BlockBlock, and your terminal app
-- [ ] Restart osquery so it picks up Full Disk Access: `sudo launchctl kickstart -k system/io.osquery.agent`
 - [ ] **iPhone**: install **ntfy**, subscribe to server `ntfy.sh` and the topic the script prints
 
-Then press Return in the script to run the Phase 0 checks.
+Then press Return in the script. It restarts osquery so Full Disk Access takes effect,
+then runs the Phase 0 checks.
 
 ## 3. Check it worked
 
 - [ ] Test push arrived on your phone
 - [ ] `sudo bastion doctor` shows **OK** for osquery, santa, bastiond, notify. If osquery
-      says "no process events", Full Disk Access isn't active yet; redo the restart above.
+      says "no process events", Full Disk Access isn't active yet: check the grant, then run
+      `sudo launchctl kickstart -k system/io.osquery.agent`.
 - [ ] Read `reports/browserlock.md` and note who owns `~/.BrowserLock`
 - [ ] Read `reports/posture-*.md` and fix anything marked **FAIL**
 - [ ] A minute later, `sudo bastion status` shows event counts going up for osquery and santa.
