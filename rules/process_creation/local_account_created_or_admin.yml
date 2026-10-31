@@ -1,0 +1,36 @@
+title: Local Account Created or Added to the Admin Group
+id: a8fa6024-ee23-49cb-baf7-f5c98239b1b0
+status: experimental
+description: A new local user was created, or a user was added to the admin group.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.persistence
+  - attack.t1136.001
+  - attack.privilege-escalation
+  - attack.t1078.003
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  sysadminctl:
+    Image|endswith: '/sysadminctl'
+    CommandLine|contains: '-addUser'
+  dscl_create:
+    Image|endswith: '/dscl'
+    CommandLine|contains|all:
+      - '-create'
+      - '/Users/'
+  admin_group:
+    CommandLine|contains:
+      - '/Groups/admin'
+      - '-a admin'
+      - '-t user admin'
+  admin_tool:
+    Image|endswith:
+      - '/dscl'
+      - '/dseditgroup'
+  condition: sysadminctl or dscl_create or (admin_tool and admin_group)
+falsepositives:
+  - You creating a test account on purpose
+level: high

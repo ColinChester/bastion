@@ -1,0 +1,36 @@
+title: LaunchAgent or LaunchDaemon Property List Written
+id: 5c22b3ce-4b34-441f-9bf3-b0d1f014e7c1
+status: experimental
+description: >
+  A .plist was created, modified or renamed into a LaunchAgents or LaunchDaemons folder.
+  This is the most common macOS persistence method.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.persistence
+  - attack.t1543.001
+  - attack.t1543.004
+logsource:
+  product: macos
+  category: file_event
+detection:
+  selection:
+    TargetFilename|contains:
+      - '/Library/LaunchAgents/'
+      - '/Library/LaunchDaemons/'
+    TargetFilename|endswith: '.plist'
+    ActivityId:
+      - 1
+      - 3
+      - 5
+  filter_known:
+    TargetFilename|contains:
+      - '/com.apple.'
+      - '/com.bastion.'
+      - '/io.osquery.'
+      - '/com.northpolesec.'
+      - '/com.objective-see.'
+  condition: selection and not filter_known
+falsepositives:
+  - App installers and updaters (Parallels, Zoom, Google updaters)
+level: medium

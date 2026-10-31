@@ -1,0 +1,38 @@
+title: Download Piped Into a Shell
+id: 492ab3cb-e1b7-4ba4-8b49-224f457b2bd4
+status: experimental
+description: >
+  A single command line fetches a remote script with curl or wget and executes it in a
+  shell, as droppers do via sh -c, osascript "do shell script" or a LaunchAgent. Fake
+  "fix" pages and poisoned READMEs use this to run code in one paste. The same pipe typed
+  into Terminal runs as two sibling processes; bastiond's correlation analytic
+  (bastion-fetch-piped-to-shell) covers that case.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.execution
+  - attack.t1059.004
+  - attack.command-and-control
+  - attack.t1105
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  fetch:
+    CommandLine|contains:
+      - 'curl '
+      - 'wget '
+  pipe:
+    CommandLine|contains:
+      - '| sh'
+      - '|sh'
+      - '| bash'
+      - '|bash'
+      - '| zsh'
+      - '|zsh'
+      - '$(curl'
+      - '`curl'
+  condition: fetch and pipe
+falsepositives:
+  - Official installers you run on purpose (Homebrew, uv, rustup)
+level: high

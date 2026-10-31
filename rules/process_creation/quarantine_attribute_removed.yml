@@ -1,0 +1,26 @@
+title: Quarantine Attribute Removed From a File
+id: d6c44db1-7039-405f-8db5-91068c077fdd
+status: experimental
+description: >
+  xattr stripped com.apple.quarantine (or cleared all attributes), which skips the
+  Gatekeeper check on first launch. Common in "how to open this cracked app" guides.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.defense-evasion
+  - attack.t1553.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  image:
+    Image|endswith: '/xattr'
+  remove_quarantine:
+    CommandLine|contains: 'com.apple.quarantine'
+    CommandLine|re: '\s-[a-z]*d'
+  clear_all:
+    CommandLine|re: '\s-[a-z]*c'
+  condition: image and (remove_quarantine or clear_all)
+falsepositives:
+  - Running an unsigned open-source tool you trust (e.g. an emulator build)
+level: medium

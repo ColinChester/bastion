@@ -1,0 +1,45 @@
+# Bastion configuration (installed to /Library/Application Support/Bastion/config.toml)
+# Every key is optional; anything left out uses the default shown here.
+
+data_dir = "/Library/Application Support/Bastion"
+retention_days = 30
+detection_dedupe_seconds = 60
+# rules_dir = "/opt/bastion/rules"   # default: the rules bundled with the package
+
+# Extra regexes to redact before anything is stored. Add a named group "secret" to keep
+# the key name visible and hide only the value.
+extra_redaction_patterns = []
+
+[sources.osquery]
+enabled = true
+results_log = "/var/log/osquery/osqueryd.results.log"
+
+[sources.santa]
+enabled = true
+log = "/var/db/santa/santa.log"
+
+[sources.unified_log]
+enabled = true
+predicates = [
+  'process == "sudo"',
+  'subsystem BEGINSWITH "com.objective-see"',
+]
+
+[notify]
+# Phase 0-1 use the public ntfy.sh server. The topic is random and acts like a password:
+# anyone who knows it can read these pushes, so pushes carry only rule titles and counts.
+ntfy_server = "https://ntfy.sh"
+ntfy_topic = "__NTFY_TOPIC__"
+# daily     = one quiet summary push a day (chosen for the shadow week)
+# high_live = daily summary + an immediate push for high-severity rules
+# off       = no pushes
+mode = "daily"
+daily_summary_time = "08:30"
+
+[baseline]
+# First-seen analytics only record during this window (the shadow period), then alert.
+learning_days = 14
+dev_path_markers = [
+  "/git/", "/target/debug/", "/target/release/", "/.build/", "/build/",
+  "/node_modules/", "/DerivedData/", "/PycharmProjects/", "/eclipse-workspace/",
+]

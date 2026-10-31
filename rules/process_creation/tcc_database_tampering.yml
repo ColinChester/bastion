@@ -1,0 +1,27 @@
+title: Privacy Permission (TCC) Database Tampering
+id: e6923ddb-a495-4ba6-8ac6-f79e01b8720b
+status: experimental
+description: >
+  The TCC database was opened with sqlite3 or privacy grants were reset with tccutil.
+  Malware edits TCC to grant itself Full Disk Access or screen recording.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.defense-evasion
+  - attack.privilege-escalation
+  - attack.t1548.006
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  sqlite:
+    Image|endswith: '/sqlite3'
+    CommandLine|contains: 'TCC.db'
+  tccutil:
+    Image|endswith: '/tccutil'
+    CommandLine|contains: 'reset'
+  condition: sqlite or tccutil
+falsepositives:
+  - Resetting permissions for an app you are developing; Bastion's own posture check reads
+    TCC.db through Python, not the sqlite3 CLI
+level: high

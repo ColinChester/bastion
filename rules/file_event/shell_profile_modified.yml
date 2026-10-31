@@ -1,0 +1,32 @@
+title: Shell Startup File Modified
+id: a7814e90-ce51-407e-9c19-eca41249ffa2
+status: experimental
+description: >
+  A zsh or bash startup file changed. Code added there runs in every new terminal,
+  including ones your coding agents open.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.persistence
+  - attack.t1546.004
+logsource:
+  product: macos
+  category: file_event
+detection:
+  selection:
+    TargetFilename|endswith:
+      - '/.zshrc'
+      - '/.zprofile'
+      - '/.zshenv'
+      - '/.zlogin'
+      - '/.bashrc'
+      - '/.bash_profile'
+      - '/.profile'
+    ActivityId:
+      - 1
+      - 3
+      - 5
+  condition: selection
+falsepositives:
+  - You editing your shell config, or tools like conda init, nvm and rustup adding lines
+level: medium

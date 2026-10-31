@@ -1,0 +1,39 @@
+title: Attempt to Stop or Unload a Security Tool
+id: c12a4b7e-0916-49b6-9501-d07b4cfed46d
+status: experimental
+description: >
+  launchctl or a kill command targeted Santa, osquery, LuLu, BlockBlock or Bastion.
+  Malware disables monitoring before acting.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.defense-evasion
+  - attack.t1562.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  launchctl:
+    Image|endswith: '/launchctl'
+    CommandLine|contains:
+      - 'unload'
+      - 'bootout'
+      - 'disable'
+      - 'remove'
+  kill:
+    Image|endswith:
+      - '/kill'
+      - '/killall'
+      - '/pkill'
+  target:
+    CommandLine|contains:
+      - 'santa'
+      - 'osquery'
+      - 'lulu'
+      - 'blockblock'
+      - 'bastion'
+      - 'objective-see'
+  condition: (launchctl or kill) and target
+falsepositives:
+  - Bastion's own uninstall script, or you restarting a tool while debugging
+level: high

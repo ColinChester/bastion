@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+reports/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+# local copies of cloud-init with a real Tailscale key
+deploy/vm/*.local.yaml

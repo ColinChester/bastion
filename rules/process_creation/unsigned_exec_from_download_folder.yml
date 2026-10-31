@@ -1,0 +1,33 @@
+title: Unsigned or Ad-hoc Signed Binary Run From a Download Folder
+id: 31283e2d-3db6-422c-8e36-160e117606e9
+status: experimental
+description: >
+  An executable with no Team ID or with ad-hoc/invalid code signing ran from a browser,
+  P2P or file-locker download folder. This is how most trojanized apps and cracked
+  builds start.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.execution
+  - attack.t1204.002
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection_path:
+    Image|contains:
+      - '/Downloads/'
+      - '/Soulseek Downloads/'
+      - '/MEGA downloads/'
+  unsigned_team:
+    TeamId: null
+  unsigned_flags:
+    CodesigningFlags|contains:
+      - 'ADHOC'
+      - 'NOT_VALID'
+  filter_platform:
+    PlatformBinary: 1
+  condition: selection_path and 1 of unsigned_* and not filter_platform
+falsepositives:
+  - Open-source tools you downloaded and run unsigned on purpose
+level: high

@@ -1,0 +1,57 @@
+title: Binary Executed From a Hidden Folder in the Home Directory
+id: dd785108-4b56-4f6f-b155-71bd31c1782b
+status: experimental
+description: >
+  An executable ran from a dot-folder directly under a home directory that is not a
+  known toolchain or editor folder. Malware hides payloads in random-named dot-folders.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.defense-evasion
+  - attack.t1564.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    Image|re: '^/Users/[^/]+/\.[^/]+/'
+  filter_toolchains:
+    Image|contains:
+      - '/.nvm/'
+      - '/.npm/'
+      - '/.bun/'
+      - '/.deno/'
+      - '/.cargo/'
+      - '/.rustup/'
+      - '/.conda/'
+      - '/.anaconda/'
+      - '/.pyenv/'
+      - '/.local/'
+      - '/.gradle/'
+      - '/.m2/'
+      - '/.sdkman/'
+      - '/.swiftpm/'
+      - '/.android/'
+      - '/.dotnet/'
+      - '/.cache/'
+      - '/.config/'
+      - '/.docker/'
+      - '/.orbstack/'
+  filter_editors_agents:
+    Image|contains:
+      - '/.vscode/'
+      - '/.vscode-shared/'
+      - '/.windsurf/'
+      - '/.codeium/'
+      - '/.codex/'
+      - '/.copilot/'
+      - '/.claude/'
+      - '/.continuum/'
+      - '/.lemminx/'
+      - '/.redhat/'
+      - '/.eclipse/'
+      - '/.p2/'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - A new developer tool that installs into its own dot-folder (add it to the filter)
+level: medium

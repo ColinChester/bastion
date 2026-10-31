@@ -1,0 +1,29 @@
+title: New LaunchAgent, LaunchDaemon or Login Item
+id: e78223ae-ebf4-4d08-b4db-642de59362b6
+status: experimental
+description: >
+  A launchd job or login/background item appeared that was not present when Bastion
+  took its first inventory.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.persistence
+  - attack.t1543.001
+  - attack.t1547.015
+logsource:
+  product: macos
+  category: persistence
+detection:
+  selection:
+    ActivityId: 1
+  filter_known:
+    Label|startswith:
+      - 'com.apple.'
+      - 'com.bastion.'
+      - 'io.osquery.'
+      - 'com.northpolesec.'
+      - 'com.objective-see.'
+  condition: selection and not filter_known
+falsepositives:
+  - Apps you just installed that add helpers or updaters
+level: medium

@@ -1,0 +1,23 @@
+title: Gatekeeper Disabled With spctl
+id: 98dd0582-c5e1-4305-a005-643955eec506
+status: experimental
+description: Gatekeeper assessments were turned off system-wide.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.defense-evasion
+  - attack.t1553.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    Image|endswith: '/spctl'
+    CommandLine|contains:
+      - '--master-disable'
+      - '--global-disable'
+      - '--disable'
+  condition: selection
+falsepositives:
+  - None expected on this Mac
+level: high

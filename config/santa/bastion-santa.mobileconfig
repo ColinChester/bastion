@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Bastion Phase 1 Santa configuration.
+  - ClientMode 1 = Monitor: nothing is blocked, every execution is logged.
+  - EnableTransitiveRules + compiler rules for Apple's linker (ld) and lipo: binaries
+    you build locally get recorded as "transitive" (built here) instead of unknown, so
+    later lockdown won't break your builds. No rule for codesign on purpose: Santa's docs
+    warn it would let any binary be re-signed and allowed.
+  Install: double-click this file, then approve it in
+  System Settings > General > Device Management (or Privacy & Security > Profiles).
+  Remove the same way. Payload domain: com.northpolesec.santa.
+-->
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>ClientMode</key>
+			<integer>1</integer>
+			<key>EventLogType</key>
+			<string>file</string>
+			<key>EventLogPath</key>
+			<string>/var/db/santa/santa.log</string>
+			<key>EnableTransitiveRules</key>
+			<true/>
+			<key>StaticRules</key>
+			<array>
+				<dict>
+					<key>identifier</key>
+					<string>platform:com.apple.ld</string>
+					<key>policy</key>
+					<string>ALLOWLIST_COMPILER</string>
+					<key>rule_type</key>
+					<string>SIGNINGID</string>
+				</dict>
+				<dict>
+					<key>identifier</key>
+					<string>platform:com.apple.lipo</string>
+					<key>policy</key>
+					<string>ALLOWLIST_COMPILER</string>
+					<key>rule_type</key>
+					<string>SIGNINGID</string>
+				</dict>
+			</array>
+			<key>PayloadDisplayName</key>
+			<string>Santa Configuration (Bastion)</string>
+			<key>PayloadIdentifier</key>
+			<string>com.bastion.santa.E1A6C0E5-8CD5-4CE6-855F-8CD94966F724</string>
+			<key>PayloadType</key>
+			<string>com.northpolesec.santa</string>
+			<key>PayloadUUID</key>
+			<string>E1A6C0E5-8CD5-4CE6-855F-8CD94966F724</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Santa in Monitor mode with compiler rules for local builds (Bastion Phase 1)</string>
+	<key>PayloadDisplayName</key>
+	<string>Bastion: Santa Configuration</string>
+	<key>PayloadIdentifier</key>
+	<string>com.bastion.santa</string>
+	<key>PayloadOrganization</key>
+	<string>Bastion</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>FA97FCFE-D060-40D8-B269-C4D22A1F9BC7</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

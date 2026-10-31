@@ -1,0 +1,30 @@
+title: Execution From a Temporary or Shared Folder
+id: 3f8a353a-e352-42d5-9a81-22515d57d2b7
+status: experimental
+description: >
+  A non-Apple binary ran from /tmp, /private/var/tmp or /Users/Shared. Malware droppers
+  stage payloads in world-writable folders.
+author: Colin Chester (Bastion)
+date: 2026-10-31
+tags:
+  - attack.execution
+  - attack.t1204.002
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    Image|startswith:
+      - '/tmp/'
+      - '/private/tmp/'
+      - '/private/var/tmp/'
+      - '/var/tmp/'
+      - '/Users/Shared/'
+  filter_platform:
+    PlatformBinary: 1
+  filter_homebrew:
+    ParentImage|contains: '/Homebrew/'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Installers and build tools that unpack helpers into /tmp
+level: medium

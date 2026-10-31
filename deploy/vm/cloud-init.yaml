@@ -1,0 +1,24 @@
+#cloud-config
+# Bastion VM first-boot setup (Oracle Cloud, Ubuntu 24.04 aarch64).
+# Before pasting into the OCI console, replace __TAILSCALE_AUTHKEY__ with a one-off auth
+# key from https://login.tailscale.com/admin/settings/keys (pre-approved, expires in 1 h).
+# The key is visible in instance metadata, which is why it should be single-use and short-lived.
+hostname: bastion-vm
+package_update: true
+package_upgrade: true
+packages:
+  - unattended-upgrades
+  - docker.io
+  - docker-compose-v2
+  - jq
+write_files:
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+runcmd:
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - tailscale up --authkey=__TAILSCALE_AUTHKEY__ --ssh --hostname=bastion-vm
+  - systemctl enable --now docker
+  - usermod -aG docker ubuntu
+  - echo "bastion-vm ready" > /etc/motd
