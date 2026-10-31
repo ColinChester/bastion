@@ -1,8 +1,9 @@
 """Push notifications through ntfy.
 
-Phase 0-1 use the public ntfy.sh server with a random, unguessable topic; Phase 4 moves
-to a self-hosted server on the VM. Because ntfy.sh can read message contents, pushes
-here carry only rule titles and counts, never paths, command lines or usernames.
+Phase 0-1 use the public ntfy.sh server with a random, unguessable topic; Phase 2 moves
+to a self-hosted server reachable only over Tailscale. Because ntfy.sh can read message
+contents, pushes here carry only rule titles and counts, never paths, command lines or
+usernames.
 """
 
 from __future__ import annotations
@@ -38,8 +39,11 @@ class Notifier:
         if click:
             headers["Click"] = click
         try:
-            client = self._client or httpx.Client(timeout=10)
-            resp = client.post(url, content=message.encode(), headers=headers)
+            if self._client is not None:
+                resp = self._client.post(url, content=message.encode(), headers=headers)
+            else:
+                with httpx.Client(timeout=10) as client:
+                    resp = client.post(url, content=message.encode(), headers=headers)
             resp.raise_for_status()
             return True
         except httpx.HTTPError as exc:
@@ -63,7 +67,7 @@ def daily_summary_text(store: Store, learning_day: int, learning_days: int,
         for title, n in by_title.most_common(5):
             lines.append(f"- {title} x{n}")
         if len(by_title) > 5:
-            lines.append(f"- ...and {len(by_title) - 5} more (run `bastion report`)")
+            lines.append(f"- ...and {len(by_title) - 5} more (run `sudo bastion report`)")
     else:
         lines.append("No rule hits in the last 24 h.")
     health = ", ".join(f"{k} {v}" for k, v in sensor_health.items())

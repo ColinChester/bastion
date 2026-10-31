@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import shutil
@@ -49,23 +50,36 @@ async def unified_log_collector(cfg: Config, store: Store, queue: asyncio.Queue)
     """
     if not shutil.which("/usr/bin/log"):
         log.info("unified log collector disabled: /usr/bin/log not found")
-        return
+        await asyncio.Event().wait()  # idle forever; returning would look like a crash
     cmd = unified_log_command(cfg.unified_log.predicates)
     backoff = 1.0
     while True:
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            limit=4 * 1024 * 1024,  # default 64 KB line limit is too small for some entries
         )
         assert proc.stdout is not None
-        async for raw in proc.stdout:
-            line = raw.decode("utf-8", errors="replace").strip()
-            if not line.startswith("{"):
-                continue  # header line ("Filtering the log data using ...")
-            try:
-                await queue.put(RawRecord("unified_log", json.loads(line)))
-                backoff = 1.0
-            except json.JSONDecodeError:
-                continue
+        try:
+            while True:
+                try:
+                    raw = await proc.stdout.readline()
+                except ValueError:  # one line longer than the limit: skip it
+                    log.debug("skipped an oversized unified log entry")
+                    continue
+                if not raw:
+                    break
+                line = raw.decode("utf-8", errors="replace").strip()
+                if not line.startswith("{"):
+                    continue  # header line ("Filtering the log data using ...")
+                try:
+                    await queue.put(RawRecord("unified_log", json.loads(line)))
+                    backoff = 1.0
+                except json.JSONDecodeError:
+                    continue
+        finally:
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.terminate()
         await proc.wait()
         log.warning("log stream exited (%s); restarting in %.0fs", proc.returncode, backoff)
         await asyncio.sleep(backoff)

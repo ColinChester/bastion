@@ -3,28 +3,51 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
 from bastion import __version__
-from bastion.config import load_config
+from bastion.config import Config, ConfigPermissionError, load_config
+
+# Commands that read bastiond's root-only data folder or config.
+NEEDS_ROOT = {"status", "doctor", "report", "test-push"}
 
 
-def _store(cfg):
+def _need_sudo(cmd: str) -> str:
+    return (f"`bastion {cmd}` reads Bastion's data, which is root-only. "
+            f"Run it with sudo:  sudo bastion {cmd} ...")
+
+
+def _store(cfg, cmd: str = "status"):
     from bastion.store import Store
 
+    if os.geteuid() != 0:
+        sys.exit(_need_sudo(cmd))
     if not cfg.db_path.exists():
-        sys.exit(f"No database at {cfg.db_path}. Is bastiond running? (try: sudo bastion ...)")
+        sys.exit(f"No database at {cfg.db_path} yet. Is bastiond running? "
+                 "Check with: sudo bastion doctor")
     return Store(cfg.db_path)
+
+
+def _write_user_file(path: Path, text: str) -> None:
+    """Write a report and, under sudo, hand it back to the user who ran sudo."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    uid, gid = os.environ.get("SUDO_UID"), os.environ.get("SUDO_GID")
+    if os.geteuid() == 0 and uid and gid:
+        with contextlib.suppress(OSError):
+            os.chown(path, int(uid), int(gid))
 
 
 def cmd_status(args, cfg) -> int:
     from bastion.daemon import HEARTBEAT_KEY, learning_day, sensor_health
 
-    store = _store(cfg)
+    store = _store(cfg, "status")
     hb = store.get_state(HEARTBEAT_KEY)
     age = (time.time() * 1000 - int(hb)) / 1000 if hb else None
     print(f"bastiond heartbeat: {f'{age:.0f} s ago' if age is not None else 'never'}")
@@ -32,8 +55,8 @@ def cmd_status(args, cfg) -> int:
     for k, v in sensor_health(cfg, store).items():
         print(f"sensor {k}: {v}")
     day = int(time.time() * 1000) - 86_400_000
-    print("events (24 h): " + ", ".join(f"{k} {v:,}"
-                                        for k, v in store.count_events_by_source(day).items()))
+    counts = store.count_events_by_source(day)
+    print("events (24 h): " + (", ".join(f"{k} {v:,}" for k, v in counts.items()) or "none"))
     dets = list(store.iter_detections(day))
     print(f"detections (24 h): {len(dets)} ({sum(d['hits'] for d in dets)} hits)")
     return 0
@@ -55,9 +78,8 @@ def cmd_posture(args, cfg) -> int:
     print(md)
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     out_dir = Path(args.out) if args.out else Path.cwd()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"posture-{stamp}.md").write_text(md)
-    (out_dir / f"posture-{stamp}.json").write_text(to_json(checks))
+    _write_user_file(out_dir / f"posture-{stamp}.md", md)
+    _write_user_file(out_dir / f"posture-{stamp}.json", to_json(checks))
     print(f"\nSaved posture-{stamp}.md and .json in {out_dir}", file=sys.stderr)
     return 0
 
@@ -88,9 +110,9 @@ def cmd_test_push(args, cfg) -> int:
 def cmd_report(args, cfg) -> int:
     from bastion.report import build_report
 
-    md = build_report(_store(cfg), days=args.days)
+    md = build_report(_store(cfg, "report"), days=args.days)
     if args.out:
-        Path(args.out).write_text(md)
+        _write_user_file(Path(args.out), md)
         print(f"wrote {args.out}")
     else:
         print(md)
@@ -158,7 +180,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="treat the learning window as finished (first-seen findings fire)")
 
     args = ap.parse_args(argv)
-    cfg = load_config(args.config)
+    try:
+        cfg = load_config(args.config)
+    except ConfigPermissionError:
+        if args.cmd in NEEDS_ROOT:
+            print(_need_sudo(args.cmd), file=sys.stderr)
+            return 1
+        cfg = Config()  # posture, whoowns, rules and replay work fine with defaults
     handler = {
         "status": cmd_status, "doctor": cmd_doctor, "posture": cmd_posture,
         "whoowns": cmd_whoowns, "test-push": cmd_test_push, "report": cmd_report,

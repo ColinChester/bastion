@@ -201,16 +201,21 @@ class Posture:
         if not grants and errors:
             return Check("tcc", "Privacy grants (TCC)", "unknown",
                          "Grant Full Disk Access to your terminal app, then re-run.", errors)
-        return Check("tcc", "Privacy grants (TCC)", "info",
-                     f"{len(grants)} sensitive grants; remove any you no longer use.",
-                     sorted(grants))
+        detail = f"{len(grants)} sensitive grants; remove any you no longer use."
+        if errors:
+            detail += f" ({len(errors)} database(s) unreadable; listed below.)"
+        return Check("tcc", "Privacy grants (TCC)", "info", detail, sorted(grants) + errors)
 
     # ---- secrets and keys ---------------------------------------------------------
     SECRET_FILES = [".netrc", ".git-credentials", ".npmrc", ".pypirc", ".env",
                     ".aws/credentials", ".aws/config", ".docker/config.json",
-                    ".config/gh/hosts.yml", ".codex/config.toml", ".codex/auth.json",
+                    ".config/gh/hosts.yml", ".codex/config.toml",
                     ".claude/settings.json", ".zshrc", ".zprofile", ".zshenv", ".bashrc",
                     ".bash_profile", ".profile"]
+    # Files where a CLI deliberately stores its own sign-in tokens. Having tokens there is
+    # expected; the risk is other users being able to read them.
+    TOOL_TOKEN_FILES = [".codex/auth.json", ".config/gcloud/credentials.db",
+                        ".config/gcloud/access_tokens.db"]
 
     def secrets(self) -> Check:
         patterns = [(n, re.compile(p)) for n, p in _BUILTIN if n != "secret_assignment"]
@@ -231,6 +236,15 @@ class Posture:
                     if rx.search(line):
                         found.append(f"~/{rel}:{lineno} ({name})")
                         break
+        for rel in self.TOOL_TOKEN_FILES:
+            p = self.home / rel
+            try:
+                mode = p.stat().st_mode
+            except OSError:
+                continue
+            if mode & 0o077:
+                found.append(f"~/{rel}: sign-in tokens readable by other users "
+                             f"(mode {oct(mode & 0o777)}; fix: chmod 600)")
         if found:
             return Check("secrets", "Plaintext secrets in config files", "warn",
                          f"{len(found)} likely secret(s). Move them to Keychain or a password "

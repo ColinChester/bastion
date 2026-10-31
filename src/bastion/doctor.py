@@ -8,6 +8,7 @@ without Full Disk Access, which leaves the Endpoint Security tables empty.
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,8 @@ def check_all(cfg: Config, runner: Runner | None = None, now: float | None = Non
                           "/Library/LaunchDaemons/com.bastion.bastiond.plist; "
                           "logs: /Library/Logs/Bastion/bastiond.log"))
 
+    res.extend(_ingest_checks(cfg, now))
+
     # notifications
     if cfg.notify.ntfy_topic and cfg.notify.mode != "off":
         res.append(Health("notify", "ok", f"ntfy topic set, mode {cfg.notify.mode}"))
@@ -108,6 +111,55 @@ def check_all(cfg: Config, runner: Runner | None = None, now: float | None = Non
         res.append(Health("notify", "warn", "no ntfy topic configured",
                           "Set notify.ntfy_topic in config.toml and run `bastion test-push`"))
     return res
+
+
+def _ingest_checks(cfg: Config, now: float) -> list[Health]:
+    """Is bastiond alive and actually receiving events from each sensor?
+
+    Process checks alone miss the quiet failure where a sensor runs but its events never
+    reach bastiond (a crashed collector, a wrong log path, a missing permission).
+    """
+    from bastion.daemon import HEARTBEAT_KEY
+    from bastion.store import Store
+
+    try:
+        if not cfg.db_path.exists():
+            return [Health("ingest", "warn", "no Bastion database yet",
+                           "bastiond creates it on start; check /Library/Logs/Bastion/")]
+        store = Store(cfg.db_path)
+    except (OSError, sqlite3.Error) as exc:
+        return [Health("ingest", "warn", f"can't open the database ({exc})",
+                       "Run with sudo: sudo bastion doctor")]
+    out = []
+    try:
+        hb = store.get_state(HEARTBEAT_KEY)
+        hb_age = now - int(hb) / 1000 if hb else None
+        if hb_age is None or hb_age > 300:
+            out.append(Health("ingest", "fail",
+                              "bastiond heartbeat " + ("missing" if hb_age is None
+                                                       else f"{int(hb_age / 60)} min old"),
+                              "sudo launchctl kickstart -k system/com.bastion.bastiond; "
+                              "then read /Library/Logs/Bastion/bastiond.log"))
+        for name in ("osquery", "santa"):
+            if not getattr(cfg, name).enabled:
+                continue
+            seen = store.get_state(f"last_seen.{name}")
+            age = now - int(seen) / 1000 if seen else None
+            if age is None:
+                out.append(Health(f"{name} feed", "warn", "bastiond hasn't received any "
+                                  f"{name} events yet",
+                                  "Normal for the first minute; if it persists, check "
+                                  "/Library/Logs/Bastion/bastiond.log"))
+            elif age > 900:
+                out.append(Health(f"{name} feed", "fail",
+                                  f"no {name} events reached bastiond for {int(age / 60)} min",
+                                  "Check the sensor above, then "
+                                  "/Library/Logs/Bastion/bastiond.log"))
+            else:
+                out.append(Health(f"{name} feed", "ok", f"last event {int(age)} s ago"))
+    finally:
+        store.close()
+    return out
 
 
 def to_text(items: list[Health]) -> str:

@@ -60,12 +60,12 @@ def build_report(store: Store, days: int = 7, now_ms: int | None = None) -> str:
         subjects: Counter[str] = Counter()
         samples: dict[str, str] = {}
         for i in items:
-            s = _subject_line(i["finding"])
+            s = _subject_line(i["finding"]).replace("`", "'")
             subjects[s] += i["hits"]
             cmd = ocsf.get(i["finding"], "process.cmd_line") or ocsf.get(
                 i["finding"], "actor.process.cmd_line")
             if cmd and s not in samples:
-                samples[s] = cmd[:300]
+                samples[s] = cmd[:300].replace("`", "'")
         for s, n in subjects.most_common(25):
             out.append(f"- [ ] benign  [ ] real  — `{s}` ×{n}")
             if s in samples:

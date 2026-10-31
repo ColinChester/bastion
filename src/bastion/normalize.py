@@ -19,6 +19,9 @@ from bastion.collectors import RawRecord
 log = logging.getLogger(__name__)
 
 
+_EVENT_QUERIES = {"process_events", "file_events", "fs_events"}
+
+
 def _int(v, default=None):
     try:
         return int(v)
@@ -72,9 +75,12 @@ class Normalizer:
         cols = rec.get("columns") or {}
         t_ms = _int(cols.get("time"), None)
         t_ms = t_ms * 1000 if t_ms else _int(rec.get("unixTime"), int(time.time())) * 1000
-        # osquery's first differential result for a query (counter 0) lists everything
-        # that already exists. Mark it so detections treat it as baseline, not "new".
-        initial = rec.get("counter") in (0, "0") and action == "added"
+        # osquery's first differential result for a state query (counter 0) lists
+        # everything that already exists. Mark it so detections treat it as baseline, not
+        # "new". Event tables (execs, file events) have no such backlog: their first batch
+        # is real activity and must be evaluated.
+        initial = (rec.get("counter") in (0, "0") and action == "added"
+                   and name not in _EVENT_QUERIES)
         handler = {
             "process_events": self._oq_exec,
             "file_events": self._oq_es_file,

@@ -76,7 +76,7 @@ class Pipeline:
             title = finding["finding_info"]["title"]
             self.notifier.send(f"Bastion: {title}",
                                "High-severity rule hit (shadow mode, nothing was blocked). "
-                               "Details: run `bastion report` on your Mac.",
+                               "Details: run `sudo bastion report` on your Mac.",
                                priority="high", tags="warning")
 
 
@@ -167,12 +167,22 @@ async def run(cfg: Config) -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
-    await stop.wait()
+    stopper = asyncio.create_task(stop.wait(), name="stop")
+    # Every task runs forever. If one ends (a crashed collector), exit non-zero so launchd's
+    # KeepAlive restarts bastiond, instead of running on half-blind with a healthy heartbeat.
+    done, _ = await asyncio.wait([stopper, *tasks], return_when=asyncio.FIRST_COMPLETED)
+    failed = [t for t in done if t is not stopper]
+    for t in failed:
+        exc = t.exception() if not t.cancelled() else None
+        log.error("task %s ended unexpectedly: %r", t.get_name(), exc,
+                  exc_info=exc if exc else None)
     log.info("bastiond stopping")
-    for t in tasks:
+    for t in [stopper, *tasks]:
         t.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
+    await asyncio.gather(stopper, *tasks, return_exceptions=True)
     store.close()
+    if failed:
+        raise SystemExit(1)
 
 
 def setup_logging(log_file: Path | None, verbose: bool = False) -> None:

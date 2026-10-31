@@ -51,6 +51,8 @@ Full Disk Access). [docs/setup-checklist.md](docs/setup-checklist.md) walks thro
 
 ## Commands
 
+Commands that read Bastion's data or config need `sudo`, because that folder is root-only.
+
 | Command | What it does |
 | --- | --- |
 | `sudo bastion status` | heartbeat, sensor freshness, 24 h event and detection counts |

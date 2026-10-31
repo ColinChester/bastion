@@ -21,6 +21,8 @@ from bastion.store import Store
 
 log = logging.getLogger(__name__)
 
+_MAX_READ = 8 * 1024 * 1024
+
 
 class FileTailer:
     def __init__(
@@ -37,6 +39,7 @@ class FileTailer:
         self.poll = poll_seconds
         self.start_at_end_if_new = start_at_end_if_new
         self._buf = b""
+        self._skipping = False
 
     def read_available(self) -> list[str]:
         """Read all complete lines appended since the last call. Never blocks."""
@@ -53,17 +56,33 @@ class FileTailer:
             log.info("%s rotated or truncated; restarting at 0", self.path)
             offset = 0
             self._buf = b""
+            self._skipping = False
         if st.st_size == offset:
             if inode != st.st_ino:
                 self.store.set_checkpoint(self.name, st.st_ino, offset)
             return []
         with open(self.path, "rb") as fh:
             fh.seek(offset)
-            chunk = fh.read(8 * 1024 * 1024)  # cap per poll; the rest comes next poll
+            chunk = fh.read(_MAX_READ)  # cap per poll; the rest comes next poll
             new_offset = fh.tell()
         data = self._buf + chunk
+        if self._skipping:
+            # Still inside an oversized line: drop everything up to its newline.
+            nl = data.find(b"\n")
+            if nl < 0:
+                self.store.set_checkpoint(self.name, st.st_ino, new_offset)
+                return []
+            self._skipping = False
+            data = data[nl + 1:]
         lines = data.split(b"\n")
         self._buf = lines.pop()  # incomplete trailing line (or b"")
+        if not lines and len(chunk) >= _MAX_READ:
+            # A single line bigger than the read cap would stall the tailer forever.
+            log.warning("%s: skipping a line longer than %d bytes", self.path, _MAX_READ)
+            self.store.set_checkpoint(self.name, st.st_ino, new_offset)
+            self._buf = b""
+            self._skipping = True
+            return []
         # Persist offset excluding the buffered partial line so a crash re-reads it.
         self.store.set_checkpoint(self.name, st.st_ino, new_offset - len(self._buf))
         self._buf = b""

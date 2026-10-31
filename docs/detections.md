@@ -62,6 +62,10 @@ installing Bastion doesn't produce "new LaunchAgent" alerts for every existing o
 
 ## Tuning
 
+Expected on install day: *Attempt to stop or unload a security tool* fires when
+`bootstrap.sh` restarts osquery and bastiond with `launchctl bootout`. Mark those benign;
+they're the script, not an attacker.
+
 After the shadow week, `sudo bastion report` lists every subject per rule. For each
 benign one, add it to that rule's `filter_*` selection. For example, if Parallels'
 updater writes a LaunchAgent:

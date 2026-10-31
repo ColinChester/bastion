@@ -118,13 +118,22 @@ def _merge(dc, values: dict):
             setattr(dc, key, value)
 
 
+class ConfigPermissionError(PermissionError):
+    """The config file exists but this user can't read it (it's root-only by design)."""
+
+
 def load_config(path: Path | str | None = None) -> Config:
     """Load config from `path`, $BASTION_CONFIG, or the default location."""
     cfg = Config()
     candidate = Path(path) if path else Path(os.environ.get(ENV_CONFIG, DEFAULT_CONFIG_PATH))
-    if candidate.is_file():
-        with candidate.open("rb") as fh:
-            raw = tomllib.load(fh)
+    try:
+        exists = candidate.is_file()
+        if exists:
+            with candidate.open("rb") as fh:
+                raw = tomllib.load(fh)
+    except PermissionError as exc:
+        raise ConfigPermissionError(f"can't read {candidate} (root-only)") from exc
+    if exists:
         sources = raw.pop("sources", {})
         for name in ("osquery", "santa", "unified_log"):
             if name in sources:

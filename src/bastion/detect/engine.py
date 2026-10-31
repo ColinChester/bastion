@@ -64,6 +64,10 @@ class Hit:
 
 def _subject(event: dict) -> str:
     """What a detection is about, for de-duplication (not pid: re-runs should merge)."""
+    if event.get("class_uid") == 1001 and ocsf.get(event, "file.path"):
+        # File events: the file is the subject. The same write is often seen twice (ES
+        # with the writing process, FSEvents without one) and should merge into one hit.
+        return f"file|{ocsf.get(event, 'file.path')}"
     parts = [
         ocsf.get(event, "process.file.path") or ocsf.get(event, "actor.process.file.path") or "",
         ocsf.get(event, "file.path") or "",
