@@ -91,4 +91,5 @@ system commands by a fake runner.
 | 4 | Move to an Oracle Cloud VM over Tailscale, NATS JetStream, dead-man's switch, remaining agents |
 | 5 | Validation with Atomic Red Team and prompt-injection tests, metrics, demo |
 
-Design choices so far are recorded in [docs/decisions.md](docs/decisions.md).
+Design choices so far are recorded in [docs/decisions.md](docs/decisions.md), and every
+problem hit so far, with its cause and fix, in [docs/issues-log.md](docs/issues-log.md).

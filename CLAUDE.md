@@ -14,3 +14,6 @@
   until Phase 3's policy engine and root executor exist.
 - Keep anything from Colin's previous employer out of this repo: no internal names, code or vendor
   lists.
+- Log every bug, misfire or install surprise in `docs/issues-log.md` (symptom, cause, fix,
+  commit, test), newest first, and add it to the index table. Update the entry if a fix
+  changes later.
