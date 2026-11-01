@@ -66,6 +66,7 @@ FIELD_MAP: dict[str, dict[str, str]] = {
         "PersistenceType": "unmapped.persistence.type",
         "Label": "unmapped.persistence.label",
         "Program": "unmapped.persistence.program",
+        "SeenBefore": "unmapped.persistence.seen_before",
         "ActivityId": "activity_id",
     },
     "network_connection": {

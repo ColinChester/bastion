@@ -101,6 +101,7 @@ class DetectionEngine:
     def evaluate(self, event: dict, event_id: int | None = None) -> list[Hit]:
         hits: list[Hit] = []
         initial = bool(ocsf.get(event, "unmapped.initial_snapshot"))
+        self._mark_known_persistence(event)
         if not initial:
             for rule in self.rules:
                 try:
@@ -119,6 +120,22 @@ class DetectionEngine:
         if not initial:
             hits.extend(self._fetch_piped_to_shell(event, event_id))
         return hits
+
+    # ---- persistence --------------------------------------------------------------
+    def _mark_known_persistence(self, event: dict) -> None:
+        """Remember every launch item ever seen and flag re-appearances.
+
+        osquery reports an existing item as "added" again when it can suddenly see more
+        (Full Disk Access granted after the first run) or when the item flickers. The
+        Sigma rule ignores items marked seen_before, so only genuinely new ones alert.
+        """
+        p = ocsf.get(event, "unmapped.persistence")
+        if not isinstance(p, dict) or event.get("activity_id") != ocsf.FILE_CREATE:
+            return
+        key = "|".join([p.get("type", ""), ocsf.get(event, "file.path") or "",
+                        p.get("label", "")])
+        now = int(event.get("time") or time.time() * 1000)
+        p["seen_before"] = not self.store.baseline_touch("persistence", key, now)
 
     # ---- correlation --------------------------------------------------------------
     def _fetch_piped_to_shell(self, event: dict, event_id: int | None) -> list[Hit]:
@@ -186,8 +203,12 @@ class DetectionEngine:
         elif cls == 4001 and act == ocsf.NET_LISTEN:
             path = ocsf.get(event, "process.file.path") or ""
             port = ocsf.get(event, "src_endpoint.port")
-            if path and port:
-                checks.append(("listener", f"{path}:{port}", "bastion-fs-listener",
+            ip = str(ocsf.get(event, "src_endpoint.ip") or "")
+            if path and port and ip not in ("127.0.0.1", "::1"):
+                # Ports in the ephemeral range change on every launch (rapportd, AltServer);
+                # treat them as one "random port" per binary so they don't alert forever.
+                port_key = port if port < 49152 else "ephemeral"
+                checks.append(("listener", f"{path}:{port_key}", "bastion-fs-listener",
                                "First-seen listening port for this binary",
                                ["attack.t1571"]))
         hits = []

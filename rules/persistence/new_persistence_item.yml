@@ -23,7 +23,9 @@ detection:
       - 'io.osquery.'
       - 'com.northpolesec.'
       - 'com.objective-see.'
-  condition: selection and not filter_known
+  filter_seen:
+    SeenBefore: true   # already known to Bastion; reported again by osquery, not new
+  condition: selection and not 1 of filter_*
 falsepositives:
   - Apps you just installed that add helpers or updaters
 level: medium

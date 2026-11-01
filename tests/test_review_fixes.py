@@ -180,3 +180,57 @@ def test_tool_token_files_flagged_only_when_readable_by_others(tmp_path):
     auth.chmod(0o644)
     chk = p.secrets()
     assert chk.status == "warn" and "chmod 600" in chk.evidence[0]
+
+
+# ---- findings from the first day of real data -----------------------------------------
+
+
+def _launchd(path, label, counter=5):
+    return RawRecord("osquery", oq("launchd", {"path": path, "label": label,
+                                               "program": "/x"}, counter=counter))
+
+
+def test_known_launch_item_reported_again_does_not_alert(cfg, store):
+    pipe = Pipeline(cfg, store)
+    item = ("/Library/LaunchAgents/us.zoom.updater.plist", "us.zoom.updater")
+    pipe.handle(_launchd(*item, counter=0))  # snapshot: learned, silent
+    pipe.handle(_launchd(*item))             # osquery re-reports it as "added"
+    assert list(store.iter_detections()) == []
+    pipe.handle(_launchd("/Library/LaunchAgents/com.evil.x.plist", "com.evil.x"))
+    dets = list(store.iter_detections())
+    assert len(dets) == 1
+    from bastion.report import build_report
+    assert "(com.evil.x)" in build_report(store)
+
+
+def test_ephemeral_and_loopback_listeners_share_one_baseline_key(cfg, store):
+    pipe = Pipeline(cfg, store)
+    store.set_state("install_ms", "0")  # learning window over
+    store.baseline_touch("listener", "/usr/libexec/rapportd:ephemeral", 0)
+
+    def listen(port, addr="0.0.0.0"):
+        return RawRecord("osquery", oq("listening_ports", {
+            "pid": "5", "port": str(port), "protocol": "6", "address": addr,
+            "path": "/usr/libexec/rapportd"}))
+
+    pipe.handle(listen(59866))
+    pipe.handle(listen(61012))
+    pipe.handle(listen(8080, "127.0.0.1"))
+    assert list(store.iter_detections()) == []
+    pipe.handle(listen(445))
+    assert [d["title"] for d in store.iter_detections()] == [
+        "First-seen listening port for this binary"]
+
+
+def test_gh_cli_keychain_read_is_filtered():
+    rules, _ = load_rules(cli.Config().resolved_rules_dir())
+    rule = next(r for r in rules if r.title.startswith("Keychain Secrets"))
+    cmd = "/usr/bin/security find-generic-password -s gh:github.com -wa ColinChester"
+    gh = norm(oq("process_events", exec_cols(
+        "/usr/bin/security", cmd, platform=1,
+        parent_path="/opt/homebrew/Cellar/gh/2.80.0/bin/gh", parent_cmdline="gh auth token")))
+    other = norm(oq("process_events", exec_cols(
+        "/usr/bin/security", "security find-generic-password -s 'Chrome Safe Storage' -wa x",
+        platform=1, parent_path="/private/tmp/stealer")))
+    assert not rule.matches(gh)
+    assert rule.matches(other)

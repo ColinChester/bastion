@@ -30,7 +30,9 @@ Plus stateful analytics in `detect/engine.py`, for things a single event can't s
 - **First-seen**: a non-Apple binary runs for the first time (low), a binary makes its first
   outbound connection (medium), a binary listens on a new port (medium). They only record
   during the 14-day learning window, then start alerting. Binaries under "built locally"
-  paths (`baseline.dev_path_markers`) never trigger them.
+  paths (`baseline.dev_path_markers`) never trigger them. Listeners only count TCP ports
+  reachable from the network; ports in the ephemeral range (49152 and up) count as one
+  "random port" per binary, since they change every launch.
 - **Download piped into a shell (interactive)** (high): `curl URL | sh` typed into Terminal
   runs curl and sh as two sibling processes, and neither command line contains the pipe,
   so the Sigma rule can't see it. This fires when curl or wget and a shell or interpreter
@@ -58,7 +60,10 @@ and timeframes are rejected at load time instead of silently not matching.
 
 osquery's first differential result for each inventory query lists everything that
 already exists. Bastion marks those events `initial_snapshot` and never alerts on them, so
-installing Bastion doesn't produce "new LaunchAgent" alerts for every existing one.
+installing Bastion doesn't produce "new LaunchAgent" alerts for every existing one. Every
+launch item Bastion has seen is also remembered (`SeenBefore`), so an item osquery reports
+as "added" a second time (for example once Full Disk Access lets it see more) doesn't
+alert again.
 
 ## Tuning
 

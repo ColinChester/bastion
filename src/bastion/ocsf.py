@@ -149,4 +149,7 @@ def detection_finding(
     for key in ("process", "actor", "file", "dst_endpoint", "src_endpoint", "message"):
         if key in event:
             finding[key] = event[key]
+    persistence = get(event, "unmapped.persistence")
+    if persistence:
+        finding["unmapped"] = {"persistence": persistence}
     return finding

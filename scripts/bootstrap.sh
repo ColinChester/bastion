@@ -146,6 +146,8 @@ TOPIC="$(sudo sed -n 's/^ntfy_topic *= *"\(.*\)"/\1/p' "$CONF" 2>/dev/null || tr
 
 # ---- 4. osquery -----------------------------------------------------------------------
 step "Configure and start osquery"
+OSQ_FRESH=0
+[[ -f /Library/LaunchDaemons/io.osquery.agent.plist ]] || OSQ_FRESH=1
 run sudo mkdir -p /var/osquery /var/log/osquery
 run sudo install -m 644 "$REPO/config/osquery/osquery.conf" /var/osquery/osquery.conf
 run sudo install -m 644 "$REPO/config/osquery/osquery.flags" /var/osquery/osquery.flags
@@ -187,8 +189,16 @@ fi
 if [[ -t 0 && $DRY -eq 0 ]]; then
   read -r -p "    Press Return when you've done a-d (or Ctrl-C to finish later)... " _
 fi
-# osqueryd only picks up a new Full Disk Access grant when it restarts.
-run sudo launchctl kickstart -k system/io.osquery.agent || warn "couldn't restart osquery"
+# osqueryd only picks up a new Full Disk Access grant when it restarts. On a first install,
+# also clear its saved query results: they were taken before Full Disk Access, so every
+# launch item it couldn't see yet would otherwise be reported as "new".
+if [[ $OSQ_FRESH -eq 1 ]]; then
+  run sudo launchctl bootout system/io.osquery.agent 2>/dev/null || true
+  run sudo rm -rf /var/osquery/osquery.db
+  load_daemon io.osquery.agent /Library/LaunchDaemons/io.osquery.agent.plist
+else
+  run sudo launchctl kickstart -k system/io.osquery.agent || warn "couldn't restart osquery"
+fi
 
 # ---- 7. phase 0 checks ----------------------------------------------------------------
 if [[ $NO_CHECKS -eq 0 ]]; then

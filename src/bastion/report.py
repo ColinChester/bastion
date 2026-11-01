@@ -21,8 +21,9 @@ def _subject_line(f: dict) -> str:
     target = ocsf.get(f, "file.path") or ""
     dst = ocsf.get(f, "dst_endpoint.ip")
     port = ocsf.get(f, "src_endpoint.port")
-    bits = [b for b in (proc, target and f"-> {target}", dst and f"-> {dst}",
-                        port and f"listening :{port}") if b]
+    label = ocsf.get(f, "unmapped.persistence.label")
+    bits = [b for b in (proc, target and f"-> {target}", label and f"({label})",
+                        dst and f"-> {dst}", port and f"listening :{port}") if b]
     return " ".join(bits) or "(no subject)"
 
 
