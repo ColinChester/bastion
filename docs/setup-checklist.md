@@ -55,6 +55,9 @@ or OpenAI keys in Phase 2, set a $25/month spend alert in each provider console.
 ## 6. The shadow week (Phase 1 gate)
 
 - [ ] Use the Mac normally for 7 days. You'll get one quiet summary push each morning at 08:30.
+- [ ] Day 7: `./scripts/test-triggers.sh` fires every detection once with harmless decoys
+      and checks each was recorded (about 7 minutes; BlockBlock will ask about a test
+      plist, which is expected). Its PASS lines are the labeled true positives.
 - [ ] Day 7: `sudo bastion report --out reports/fp-review.md`, tick **benign** or **real**
       for each subject, and add filters for the benign ones (see
       [detections.md](detections.md#tuning)). That reviewed list is the Phase 1 gate.

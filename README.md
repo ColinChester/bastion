@@ -61,6 +61,8 @@ Commands that read Bastion's data or config need `sudo`, because that folder is 
 | `sudo bastion whoowns PATH` | ownership triage for a file or folder |
 | `sudo bastion report [--days 7] [--out FILE]` | false-positive review sheet, grouped by rule |
 | `sudo bastion test-push` | send a test notification |
+| `sudo bastion detections [--since EPOCH]` | detections since a time (`--json` for scripts) |
+| `./scripts/test-triggers.sh` | fire every detection once with harmless decoys and check it was recorded |
 | `bastion rules [--dir rules]` | load and validate the Sigma rules |
 | `bastion replay {osquery,santa,unified_log} FILE` | run recorded logs through the pipeline into a scratch DB |
 

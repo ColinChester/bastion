@@ -15,7 +15,7 @@ from bastion import __version__
 from bastion.config import Config, ConfigPermissionError, load_config
 
 # Commands that read bastiond's root-only data folder or config.
-NEEDS_ROOT = {"status", "doctor", "report", "test-push"}
+NEEDS_ROOT = {"status", "doctor", "report", "test-push", "detections"}
 
 
 def _need_sudo(cmd: str) -> str:
@@ -119,6 +119,21 @@ def cmd_report(args, cfg) -> int:
     return 0
 
 
+def cmd_detections(args, cfg) -> int:
+    """Detections whose latest hit is at or after --since (epoch seconds)."""
+    store = _store(cfg, "detections")
+    rows = [{"title": d["title"], "rule_id": d["rule_id"], "severity": d["severity"],
+             "hits": d["hits"], "last_ms": d["last_ms"]}
+            for d in store.iter_detections(int(args.since * 1000))]
+    if args.json:
+        print(json.dumps(rows))
+    else:
+        for r in rows:
+            print(f"[{r['severity']}] {r['title']} x{r['hits']}")
+        print(f"{len(rows)} detection(s)")
+    return 0
+
+
 def cmd_rules(args, cfg) -> int:
     from bastion.detect.sigma import load_rules
 
@@ -170,6 +185,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("report", help="false-positive review report")
     p.add_argument("--days", type=int, default=7)
     p.add_argument("--out")
+    p = sub.add_parser("detections", help="list detections since a time")
+    p.add_argument("--since", type=float, default=0, help="epoch seconds (default: all)")
+    p.add_argument("--json", action="store_true")
     p = sub.add_parser("rules", help="list and validate detection rules")
     p.add_argument("--dir")
     p = sub.add_parser("replay", help="replay a log file through the pipeline")
@@ -190,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     handler = {
         "status": cmd_status, "doctor": cmd_doctor, "posture": cmd_posture,
         "whoowns": cmd_whoowns, "test-push": cmd_test_push, "report": cmd_report,
-        "rules": cmd_rules, "replay": cmd_replay,
+        "rules": cmd_rules, "replay": cmd_replay, "detections": cmd_detections,
     }[args.cmd]
     return handler(args, cfg)
 
