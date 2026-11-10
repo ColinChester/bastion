@@ -9,6 +9,8 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 23 | 2026-11-10 | CI | GitHub Actions blocked by an account billing lock | open |
+| 22 | 2026-11-10 | Process | A failed CI run was reported as passing | fixed |
 | 21 | 2026-11-01 | Detection | Existing login items alerted as new (69 hits) | fixed |
 | 20 | 2026-11-01 | Detection | GitHub CLI token reads tripped the keychain rule (55 hits) | fixed |
 | 19 | 2026-11-01 | Detection | Listener baseline ballooned to 1,239 entries | fixed |
@@ -32,6 +34,30 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 23. GitHub Actions blocked by an account billing lock
+
+**Symptom.** The CI run for `b6d5035` failed in 2 seconds with no logs.
+
+**Cause.** GitHub refused to start the job: "The job was not started because your account
+is locked due to a billing issue." The code itself is fine. Running the same CI steps
+(ruff, pytest, `bastion rules`, shellcheck) on a clean clone passes: 114 tests, 15 rules,
+0 errors.
+
+**Fix.** Needs Colin: resolve the billing issue under GitHub Settings → Billing and plans,
+then re-run the failed workflow. Public repos don't use paid Actions minutes, but a
+locked account can't start any jobs. Until then, run the CI steps locally before pushing.
+
+## 22. A failed CI run was reported as passing
+
+**Symptom.** On Nov 7, Claude reported CI as passing for `b6d5035`, but that run had
+failed (#23).
+
+**Cause.** The wait loop read "the newest run" a few seconds after pushing, before GitHub
+had registered the new run, so it checked the previous commit's successful run.
+
+**Fix.** Look up the run for the pushed commit's SHA (`gh run list --commit <sha>`) and
+wait for that one, retrying until it exists.
 
 ## 21. Existing login items alerted as new (69 hits)
 
