@@ -9,11 +9,12 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 28 | 2026-11-11 | Detection / privacy | Browser updaters cleared quarantine; redaction hid commands but leaked auth headers | fixed |
 | 27 | 2026-11-11 | Storage | Database reached 1 GB in 11 days | fixed |
 | 26 | 2026-11-11 | Detection | GitHub CLI filter didn't stop the keychain alerts (2,587 hits) | fixed |
 | 25 | 2026-11-11 | Detection | Shadow-week false positives: Safari import, .NET compiler, Zoom updater | fixed |
 | 24 | 2026-11-11 | Sensors | Files created after osquery starts aren't watched | mitigated |
-| 23 | 2026-11-10 | CI | GitHub Actions blocked by an account billing lock | open |
+| 23 | 2026-11-10 | CI | GitHub Actions blocked by an account billing lock | fixed |
 | 22 | 2026-11-10 | Process | A failed CI run was reported as passing | fixed |
 | 21 | 2026-11-01 | Detection | Existing login items alerted as new (69 hits) | fixed |
 | 20 | 2026-11-01 | Detection | GitHub CLI token reads tripped the keychain rule (55 hits) | fixed |
@@ -38,6 +39,33 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 28. Browser updaters cleared quarantine; redaction hid commands but leaked auth headers
+
+**Symptom.** *Quarantine Attribute Removed* fired on
+`xattr -d -r com.apple.quarantine "/Applications/Google Chrome.app"`, which Colin hadn't
+run, and on the same command for Firefox. While looking up the parents, a stored
+command line read `gh auth [REDACTED] get`.
+
+**Cause.**
+- The quarantine hits were the browsers' own updaters. For Chrome it was GoogleUpdater's
+  `.keystone_install` script; for Firefox, `org.mozilla.updater`.
+- The `secret_assignment` redaction treated any space after a secret-sounding word as
+  `key value`, so `auth git-credential` lost `git-credential`.
+- The same pattern also consumed the scheme word in `Authorization: Bearer <token>`.
+  The specific bearer pattern then no longer matched, and the token itself was left
+  visible. `Basic` credentials were never covered.
+
+**Fix.**
+- Narrow filters for each updater: the parent script or binary, plus the browser's own
+  path. Running the same command by hand still alerts.
+- A space now counts as a separator only after a command-line flag (`--token abc`).
+- Auth scheme words are skipped so the token after them is redacted, and `Basic` was
+  added to the bearer pattern.
+
+Tests: `test_browser_updaters_clearing_quarantine_are_benign`,
+`test_auth_header_values_are_redacted_not_the_scheme`,
+`test_plain_words_after_secret_words_stay_readable`.
 
 ## 27. Database reached 1 GB in 11 days
 
@@ -127,9 +155,8 @@ is locked due to a billing issue." The code itself is fine. Running the same CI 
 (ruff, pytest, `bastion rules`, shellcheck) on a clean clone passes: 114 tests, 15 rules,
 0 errors.
 
-**Fix.** Needs Colin: resolve the billing issue under GitHub Settings → Billing and plans,
-then re-run the failed workflow. Public repos don't use paid Actions minutes, but a
-locked account can't start any jobs. Until then, run the CI steps locally before pushing.
+**Fix.** Colin resolved the billing issue on Nov 10. Runs from then on pass. (Public
+repos don't use paid Actions minutes, but a locked account can't start any jobs.)
 
 ## 22. A failed CI run was reported as passing
 

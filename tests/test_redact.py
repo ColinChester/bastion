@@ -54,3 +54,17 @@ def test_event_walk_and_env_drop():
 def test_private_key_block():
     pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\nBBBB\n-----END OPENSSH PRIVATE KEY-----"
     assert R.redact(pem) == MASK
+
+
+def test_auth_header_values_are_redacted_not_the_scheme():
+    r = Redactor()
+    assert r.redact("Authorization: Bearer abcdefghijklmnop") == "Authorization: Bearer [REDACTED]"
+    assert "dXNlcjpwYXNz" not in r.redact("authorization: Basic dXNlcjpwYXNzd29yZA==")
+
+
+def test_plain_words_after_secret_words_stay_readable():
+    r = Redactor()
+    assert r.redact("/opt/homebrew/bin/gh auth git-credential get") == (
+        "/opt/homebrew/bin/gh auth git-credential get")
+    assert r.redact("mysql --password supersecret1") == "mysql --password [REDACTED]"
+    assert r.redact("export API_TOKEN=abcdef123456") == "export API_TOKEN=[REDACTED]"

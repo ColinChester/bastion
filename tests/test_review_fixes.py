@@ -295,3 +295,25 @@ def test_gh_parent_resolved_from_santa_before_osquery_reports_child(cfg, store):
     cols["parent"] = "84693"
     pipe.handle(RawRecord("osquery", oq("process_events", cols)))
     assert list(store.iter_detections()) == []
+
+
+def test_browser_updaters_clearing_quarantine_are_benign():
+    rule = _rule("Quarantine Attribute Removed")
+    keystone = ("/bin/bash -p /var/folders/zt/x/T/com.google.GoogleUpdater.GoogleUpdater_chrome_"
+                "Unpacker_BeginUnzipping.HXkM7x/.keystone_install /var/folders/zt/x/T/com.google."
+                "GoogleUpdater.GoogleUpdater_chrome_Unpacker_BeginUnzipping.HXkM7x "
+                "\"/Applications/Google Chrome.app\" 156.0.8078.80")
+    chrome = norm(oq("process_events", exec_cols(
+        "/usr/bin/xattr", 'xattr -d -r com.apple.quarantine "/Applications/Google Chrome.app"',
+        platform=1, parent_path="/bin/bash", parent_cmdline=keystone)))
+    mozilla = ("/Applications/Firefox.app/Contents/MacOS/updater.app/Contents/MacOS/"
+               "org.mozilla.updater")
+    firefox = norm(oq("process_events", exec_cols(
+        "/usr/bin/xattr", "/usr/bin/xattr -dr com.apple.quarantine /Applications/Firefox.app",
+        platform=1, parent_path=mozilla, parent_cmdline=mozilla + " 3 /x")))
+    by_hand = norm(oq("process_events", exec_cols(
+        "/usr/bin/xattr", 'xattr -d -r com.apple.quarantine "/Applications/Google Chrome.app"',
+        platform=1, parent_path="/bin/zsh", parent_cmdline="-zsh")))
+    assert not rule.matches(chrome)
+    assert not rule.matches(firefox)
+    assert rule.matches(by_hand)

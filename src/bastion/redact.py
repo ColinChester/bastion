@@ -16,6 +16,10 @@ from collections.abc import Iterable
 
 MASK = "[REDACTED]"
 
+# Words that mark a key as holding a secret.
+_SECRET_WORDS = (r"(?:passw(?:or)?d|passwd|secret|token|api[_\-]?key|apikey|access[_\-]?key"
+                 r"|private[_\-]?key|auth|credential|session[_\-]?id)")
+
 # (name, pattern). Whole match is replaced unless the pattern has a group named "secret",
 # in which case only that group is replaced (keeps "password=" visible, hides the value).
 _BUILTIN: list[tuple[str, str]] = [
@@ -29,14 +33,18 @@ _BUILTIN: list[tuple[str, str]] = [
     ("stripe_key", r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"),
     ("npm_token", r"\bnpm_[A-Za-z0-9]{36}\b"),
     ("jwt", r"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"),
-    ("bearer", r"(?i)\b(?:bearer|token)\s+(?P<secret>[A-Za-z0-9._~+/\-]{16,}=*)"),
+    ("bearer", r"(?i)\b(?:bearer|basic|token)\s+(?P<secret>[A-Za-z0-9._~+/\-]{16,}=*)"),
     ("url_credentials", r"(?i)\b[a-z][a-z0-9+.\-]*://[^/\s:@]+:(?P<secret>[^@\s/]+)@"),
     (
         "secret_assignment",
-        # KEY=value, --key value, --key=value, "key": "value" where the key names a secret.
-        r"(?i)(?:[A-Za-z0-9_\-]*(?:passw(?:or)?d|passwd|secret|token|api[_\-]?key|apikey"
-        r"|access[_\-]?key|private[_\-]?key|auth|credential|session[_\-]?id)[A-Za-z0-9_\-]*)"
-        r"[\"']?\s*(?:=|:|\s)\s*[\"']?(?P<secret>[^\s\"'&,;]{6,})",
+        # KEY=value, KEY: value, "key": "value", --key=value and --key value, where the key
+        # names a secret. A space only counts as the separator after a command-line flag
+        # (--token abc), so ordinary words like `gh auth git-credential get` stay readable.
+        r"(?i)(?:[A-Za-z0-9_\-]*" + _SECRET_WORDS + r"[A-Za-z0-9_\-]*[\"']?\s*(?:=|:)"
+        r"|(?<![A-Za-z0-9_])-{1,2}[A-Za-z0-9_\-]*" + _SECRET_WORDS + r"[A-Za-z0-9_\-]*\s)"
+        # Skip an auth scheme word ("Authorization: Bearer x"): the bearer pattern below
+        # must still see the token after it.
+        r"\s*[\"']?(?!(?i:bearer|basic|token)\s)(?P<secret>[^\s\"'&,;]{6,})",
     ),
     (
         "url_query_secret",

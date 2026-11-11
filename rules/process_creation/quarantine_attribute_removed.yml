@@ -20,7 +20,17 @@ detection:
     CommandLine|re: '\s-[a-z]*d'
   clear_all:
     CommandLine|re: '\s-[a-z]*c'
-  condition: image and (remove_quarantine or clear_all)
+  filter_chrome_updater:
+    # GoogleUpdater unpacks Chrome and runs its .keystone_install script, which clears
+    # quarantine on the new bundle.
+    ParentCommandLine|contains|all:
+      - '/com.google.GoogleUpdater.'
+      - '/.keystone_install'
+    CommandLine|contains: '/Applications/Google Chrome.app'
+  filter_firefox_updater:
+    ParentImage: '/Applications/Firefox.app/Contents/MacOS/updater.app/Contents/MacOS/org.mozilla.updater'
+    CommandLine|contains: '/Applications/Firefox.app'
+  condition: image and (remove_quarantine or clear_all) and not 1 of filter_*
 falsepositives:
   - Running an unsigned open-source tool you trust (e.g. an emulator build)
 level: medium
