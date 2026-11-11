@@ -139,7 +139,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    for noisy in ("httpx", "httpx2", "httpcore", "anthropic"):  # one line per request
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     handler = {"run": cmd_run, "web": cmd_web, "check": cmd_check, "eval": cmd_eval,
                "digest": cmd_digest}[args.cmd]
     return handler(args, Settings.from_env())
