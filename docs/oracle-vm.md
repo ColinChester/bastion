@@ -29,6 +29,78 @@ OCI Console → Compute → Instances → **Create instance**:
 
 **"Out of host capacity"?** Try each availability domain in the dropdown. If all fail, try again at a different time of day. Upgrading the account to Pay As You Go is widely reported to make A1 capacity easier to get, and Always Free resources stay free. If you do that, set a $1 budget alert under Billing → Budgets.
 
+## Keep retrying automatically (GitHub Actions)
+
+If the console keeps saying "Out of host capacity", let GitHub retry for you. The
+`oracle-provision` workflow applies your Resource Manager stack every 30 minutes, even
+while your Mac is asleep, and **disables itself once the VM exists**. It then opens a
+GitHub issue (and, optionally, sends an ntfy push) so you know.
+
+| Outcome of a run | What the workflow does |
+| --- | --- |
+| Out of host capacity, or Oracle rate-limited the request | Green run, tries again in 30 minutes |
+| VM created, or it already exists | Disables itself, opens an issue "Oracle VM is up" |
+| A setup problem (bad key, missing permission, service limit, wrong instance name) | Disables itself, opens an issue with the error, red run |
+| Anything else | Red run (GitHub emails you), keeps trying |
+
+The logic is in `scripts/oracle-provision.sh`, tested in `tests/test_oracle_provision.py`.
+
+### 1. A stack that creates the VM
+
+In OCI → Developer Services → Resource Manager → Stacks, the stack should create the
+instance exactly as in the table above, with the instance named `bastion-vm` (or set the
+repository variable `OCI_INSTANCE_NAME` to the name you used). Use a Tailscale auth key
+that survives the wait: **reusable, pre-approved, expiring in 30 days** instead of the
+1-hour key, and delete it in Tailscale once the VM has joined.
+
+### 2. A user that can only do this
+
+So the key stored in GitHub can't touch anything else in the account:
+
+1. Identity & Security → Domains → Default → Groups → create `BastionProvisioner`.
+2. Users → create `bastion-provisioner` (no console password needed) and add it to the group.
+3. Identity & Security → Policies → create a policy in the compartment that holds the
+   stack (for a free account that's usually the root compartment):
+
+   ```
+   Allow group 'Default'/'BastionProvisioner' to manage orm-family in tenancy
+   Allow group 'Default'/'BastionProvisioner' to manage instance-family in tenancy
+   Allow group 'Default'/'BastionProvisioner' to manage volume-family in tenancy
+   Allow group 'Default'/'BastionProvisioner' to manage virtual-network-family in tenancy
+   ```
+
+   If the stack lives in its own compartment, write `in compartment <name>` instead of
+   `in tenancy`. Resource Manager runs the apply with this user's permissions, so it
+   needs the instance, volume and network rights, not just `orm-family`.
+4. Open the user → API keys → Add API key → Generate API key pair. Download the
+   private key and keep the "Configuration file preview" it shows.
+
+### 3. GitHub secrets
+
+In GitHub → bastion → Settings → Secrets and variables → Actions → New repository secret:
+
+| Secret | Value |
+| --- | --- |
+| `OCI_USER_OCID` | `user=` from the configuration preview |
+| `OCI_TENANCY_OCID` | `tenancy=` |
+| `OCI_FINGERPRINT` | `fingerprint=` |
+| `OCI_REGION` | `region=` (e.g. `us-ashburn-1`) |
+| `OCI_PRIVATE_KEY` | the whole downloaded `.pem` file, including the BEGIN/END lines |
+| `OCI_STACK_ID` | the stack's OCID (`ocid1.ormstack…`) |
+| `OCI_COMPARTMENT_ID` | the compartment the VM is created in (the tenancy OCID for root) |
+| `NTFY_URL` (optional) | e.g. `https://ntfy.sh/<a random topic>`; the Mac's own ntfy is tailnet-only, so GitHub can't reach it |
+
+Then delete the downloaded `.pem` from your Mac.
+
+### 4. Start it
+
+Actions tab → **oracle-provision** → Run workflow, to try once right away. Open the run:
+a green run whose log says `result: capacity` means everything is set up and it's just
+waiting for Oracle. After that it runs on its own at :07 and :37 past each hour.
+
+To stop it early: Actions → oracle-provision → ⋯ → Disable workflow. After you fix a
+setup problem it reported, enable it again from the same menu.
+
 ## After it boots (5–10 minutes)
 
 1. Check that `bastion-vm` appears in your Tailscale admin console, then run `tailscale ssh ubuntu@bastion-vm` from your Mac.

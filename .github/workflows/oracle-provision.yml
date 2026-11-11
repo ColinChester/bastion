@@ -1,0 +1,121 @@
+# Keeps trying to create the Oracle Cloud A1 VM (Always Free capacity is often
+# unavailable) and turns itself off once the VM exists. Setup: docs/oracle-vm.md.
+#
+# Every run: one apply of the Resource Manager stack. "Out of host capacity" is a quiet,
+# green run. Success, or a setup problem retrying can't fix, opens an issue and disables
+# this workflow. Re-enable it from the Actions tab (or `gh workflow enable
+# oracle-provision.yml`) after fixing a setup problem.
+name: oracle-provision
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"   # every 30 minutes (UTC), off the top of the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: github.repository == 'ColinChester/bastion'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write   # to disable this workflow when done
+      issues: write    # to tell you it's done
+    steps:
+      - name: Check the secrets are set
+        id: setup
+        env:
+          HAVE: ${{ secrets.OCI_STACK_ID != '' && secrets.OCI_PRIVATE_KEY != '' && secrets.OCI_COMPARTMENT_ID != '' }}
+        run: |
+          if [ "$HAVE" = "true" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OCI secrets aren't set yet (docs/oracle-vm.md); nothing to do."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.setup.outputs.ready == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.setup.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install the OCI CLI
+        if: steps.setup.outputs.ready == 'true'
+        run: pip install --quiet oci-cli==3.96.2
+
+      - name: Write the OCI config
+        if: steps.setup.outputs.ready == 'true'
+        env:
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        run: |
+          umask 077
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_PRIVATE_KEY" > ~/.oci/key.pem
+          {
+            echo "[DEFAULT]"
+            echo "user=$OCI_USER_OCID"
+            echo "fingerprint=$OCI_FINGERPRINT"
+            echo "tenancy=$OCI_TENANCY_OCID"
+            echo "region=$OCI_REGION"
+            echo "key_file=$HOME/.oci/key.pem"
+          } > ~/.oci/config
+
+      - name: Try to create the VM
+        if: steps.setup.outputs.ready == 'true'
+        id: try
+        env:
+          OCI_STACK_ID: ${{ secrets.OCI_STACK_ID }}
+          OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+          OCI_INSTANCE_NAME: ${{ vars.OCI_INSTANCE_NAME || 'bastion-vm' }}
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+          PYTHONWARNINGS: ignore
+        run: ./scripts/oracle-provision.sh
+
+      - name: Done - stop retrying
+        if: steps.try.outputs.result == 'provisioned'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DETAIL: ${{ steps.try.outputs.detail }}
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+        run: |
+          gh workflow disable oracle-provision.yml
+          gh issue create --title "Oracle VM is up" --body "The provisioning workflow created the VM ($DETAIL) and has disabled itself. Next: follow 'After it boots' in docs/oracle-vm.md (check Tailscale, close public SSH, delete the Tailscale auth key)." || true
+          if [ -n "$NTFY_URL" ]; then
+            curl -fsS -H "Title: Oracle VM is up" -d "The Bastion VM was created. Provisioning retries stopped." "$NTFY_URL" >/dev/null || true
+          fi
+
+      - name: Setup problem - stop retrying
+        if: steps.try.outputs.result == 'config'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DETAIL: ${{ steps.try.outputs.detail }}
+        run: |
+          gh workflow disable oracle-provision.yml
+          gh issue create --title "Oracle VM provisioning stopped: setup problem" --body "Retrying can't fix this, so the workflow disabled itself: $DETAIL. Fix it (docs/oracle-vm.md), then re-enable the workflow from the Actions tab." || true
+          exit 1
+
+      - name: Unexpected error
+        if: steps.try.outputs.result == 'error'
+        env:
+          DETAIL: ${{ steps.try.outputs.detail }}
+        run: |
+          echo "::error::$DETAIL"
+          exit 1
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf ~/.oci
