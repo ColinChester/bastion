@@ -20,6 +20,7 @@ from bastion.core.edge import Edge, EdgeError
 from bastion.core.graph import triage
 from bastion.core.models import ModelClient, ModelError
 from bastion.core.push import Pusher, digest_text
+from bastion.core.schemas import ActionResponse, Incident, Verdict
 from bastion.core.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -29,11 +30,65 @@ LAST_DIGEST = "last_digest_date"
 CAP_NOTICE = "cap_notice_date"
 
 
+class GatewayClient:
+    """Sends proposals to the action gateway. The core holds no signing key itself."""
+
+    def __init__(self, url: str, token: str, client=None):
+        import httpx
+
+        self._http = client or httpx.Client(base_url=url, timeout=30,
+                                            headers={"Authorization": f"Bearer {token}"})
+
+    def propose(self, body: dict) -> dict:
+        resp = self._http.post("/propose", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    def follow_up(self, action_id: str, reason: str = "") -> dict:
+        resp = self._http.post("/follow-up", json={"action_id": action_id, "reason": reason})
+        resp.raise_for_status()
+        return resp.json()
+
+
 class Worker:
     def __init__(self, settings: Settings, store: CoreStore, edge: Edge, model: ModelClient,
-                 pusher: Pusher | None = None):
+                 pusher: Pusher | None = None, gateway=None):
         self.s, self.store, self.edge, self.model = settings, store, edge, model
         self.pusher = pusher or Pusher(settings)
+        self.gateway = gateway
+        if gateway is None and settings.gateway_url and settings.gateway_token:
+            self.gateway = GatewayClient(settings.gateway_url, settings.gateway_token)
+
+    def respond(self, incident: Incident) -> list[ActionResponse]:
+        """Send the analyst's proposed containment to the gateway. The gateway and the
+        executor decide; an unreachable gateway means nothing happens (fail closed)."""
+        d = incident.decision
+        if self.gateway is None or d.verdict not in (Verdict.SUSPICIOUS, Verdict.MALICIOUS):
+            return []
+        out: list[ActionResponse] = []
+        seen: set[str] = set()
+        for proposed in incident.finding.proposed_actions:
+            if proposed.action in seen:
+                continue
+            seen.add(proposed.action)
+            try:
+                r = self.gateway.propose({
+                    "incident_id": incident.id, "detection_id": incident.detection_id,
+                    "agent": incident.domain, "action": proposed.action,
+                    "verdict": d.verdict.value, "confidence": d.confidence,
+                    "reason": d.headline})
+            except Exception as exc:
+                log.warning("gateway unreachable, no action taken: %s", exc)
+                out.append(ActionResponse(action=proposed.action, status="error",
+                                          detail="gateway unreachable; nothing was done"))
+                continue
+            out.append(ActionResponse(
+                action=proposed.action, status=str(r.get("status", "error")),
+                detail=str(r.get("detail", ""))[:400], policy=str(r.get("policy", "")),
+                policy_ids=[str(x) for x in r.get("policy_ids", [])][:8],
+                action_id=r.get("action_id"), approval_id=r.get("approval_id"),
+                follow_up_approval_id=(r.get("follow_up") or {}).get("approval_id")))
+        return out
 
     def triage_from(self) -> int:
         """Detections older than the core's first start are history, not work."""
@@ -74,6 +129,9 @@ class Worker:
             self.store.save_incident(incident)
             self.edge.ack(det_id)
             done += 1
+            incident.responses = self.respond(incident)
+            if incident.responses:
+                self.store.save_incident(incident)
             d = incident.decision
             log.info("incident %s: %s -> %s (%.0f%%, $%.4f, %d tool calls)", incident.id,
                      incident.title, d.verdict.value, d.confidence * 100, incident.cost_usd,

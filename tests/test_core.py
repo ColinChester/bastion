@@ -221,14 +221,14 @@ def test_daily_cap_pauses_triage_and_says_so_once(env):
 
 def test_actions_outside_the_agents_domain_are_dropped(env):
     final = finding_call(proposed_actions=[
-        {"action": "kill_process", "target": "pid 300", "reason": "stop it"},
+        {"action": "suspend_process", "target": "pid 300", "reason": "stop it"},
         {"action": "cut_network", "target": "all", "reason": "not Sentry's action"},
         {"action": "rm -rf /", "target": "/", "reason": "not an action at all"}])
     det = env["edge"].query("pending")[0]
     inc = triage(det, settings=env["settings"],
                  model=ScriptedClient(standard_script(agent_final=final)),
                  edge=env["edge"], store=env["core"])
-    assert [a.action for a in inc.finding.proposed_actions] == ["kill_process"]
+    assert [a.action for a in inc.finding.proposed_actions] == ["suspend_process"]
 
 
 def _finding(verdict, basis=None):

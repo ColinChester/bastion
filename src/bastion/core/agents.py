@@ -45,8 +45,11 @@ the summary that it may be a test.
 - A binary named after a system tool (spctl, security, osascript, launchctl...) that is \
 not the genuine Apple-signed one at its usual path is masquerading (T1036), which is \
 itself suspicious.
-- You can only read. Nothing you propose will be executed; proposed actions are recorded \
-for the user to review.
+- You can only read. You may propose containment, but you never choose the target: the \
+system applies an action to the object this detection is about, and only if a separate \
+policy engine allows it. Reversible containment can run automatically when the final \
+verdict is malicious with high confidence; otherwise the user is asked. Propose an \
+action only when the evidence would justify interrupting the user's work.
 - Use tools to check, not to browse: usually 1 to 4 calls. Stop when another call would \
 not change your verdict.
 - Secrets were already replaced with [REDACTED] before you saw this data.
@@ -63,8 +66,8 @@ suspicious, not benign.
 - inconclusive: the evidence does not let you decide. Say what is missing.
 
 Confidence is your probability that the verdict is right. Finish by calling \
-submit_finding exactly once. Proposed actions must come from: {actions}; propose none \
-for benign or inconclusive verdicts."""
+submit_finding exactly once. Actions you may propose: {actions}. Propose none for \
+benign or inconclusive verdicts."""
 
 DOMAIN_GUIDE = {
     "sentry": """
@@ -100,8 +103,9 @@ AGENT_NAMES = {"sentry": ("Sentry", "execution"), "anchor": ("Anchor", "persiste
 
 def system_prompt(domain: str) -> str:
     name, label = AGENT_NAMES[domain]
+    actions = ", ".join(ACTIONS[domain]) or "none (this domain has no actions yet)"
     return COMMON_RULES.format(name=name, domain=label,
-                               actions=", ".join(ACTIONS[domain])) + DOMAIN_GUIDE[domain]
+                               actions=actions) + DOMAIN_GUIDE[domain]
 
 
 def _inline_refs(node, defs: dict):

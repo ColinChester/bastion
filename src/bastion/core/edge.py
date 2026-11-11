@@ -40,6 +40,26 @@ class EdgeClient:
             raise EdgeError(f"can't reach bastiond's edge API: {exc}") from exc
         return resp.status_code == 200
 
+    # ---- executor (Phase 3) -------------------------------------------------------
+    def _exec(self, method: str, op: str, **kw):
+        try:
+            resp = self._http.request(method, f"/v1/exec/{op}", **kw)
+        except httpx.HTTPError as exc:
+            raise EdgeError(f"can't reach bastiond's edge API: {exc}") from exc
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise EdgeError(f"executor {op}: HTTP {resp.status_code}") from exc
+        if resp.status_code != 200:
+            raise EdgeError(body.get("error", f"HTTP {resp.status_code}"))
+        return body["result"]
+
+    def exec_get(self, op: str, **params):
+        return self._exec("GET", op, params=params)
+
+    def exec_post(self, op: str, body: dict):
+        return self._exec("POST", op, json=body)
+
     def healthy(self) -> bool:
         try:
             return self._http.get("/v1/health").status_code == 200
@@ -63,3 +83,26 @@ class LocalEdge:
 
     def ack(self, detection_id: int) -> bool:
         return self.queries.ack(detection_id)
+
+    # With an executor attached, behaves like the HTTP executor routes.
+    executor = None
+
+    def _exec(self, table, op, arg):
+        from bastion.executor.service import Rejected
+
+        if self.executor is None:
+            raise EdgeError("executor is not enabled")
+        try:
+            return table[op](self.executor, arg)
+        except Rejected as exc:
+            raise EdgeError(str(exc)) from exc
+
+    def exec_get(self, op: str, **params):
+        from bastion.edge_api import EXEC_GET
+
+        return self._exec(EXEC_GET, op, {k: str(v) for k, v in params.items()})
+
+    def exec_post(self, op: str, body: dict):
+        from bastion.edge_api import EXEC_POST
+
+        return self._exec(EXEC_POST, op, body)

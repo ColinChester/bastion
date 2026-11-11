@@ -39,7 +39,23 @@ def cmd_web(args, s: Settings) -> int:
 
     from bastion.core.web import create_app
 
-    uvicorn.run(create_app(s), host=args.host, port=args.port, log_level="warning")
+    edge = EdgeClient(s.edge_url, s.edge_token) if len(s.edge_token) >= 32 else None
+    gateway = None
+    if s.gateway_url and s.gateway_token:
+        from bastion.core.worker import GatewayClient
+
+        gateway = GatewayClient(s.gateway_url, s.gateway_token)
+    uvicorn.run(create_app(s, edge=edge, gateway=gateway), host=args.host, port=args.port,
+                log_level="warning", proxy_headers=True, forwarded_allow_ips="*")
+    return 0
+
+
+def cmd_gateway(args, s: Settings) -> int:
+    import uvicorn
+
+    from bastion.core.gateway import app_from_env
+
+    uvicorn.run(app_from_env(), host=args.host, port=args.port, log_level="info")
     return 0
 
 
@@ -128,6 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("web", help="serve the read-only incident page")
     p.add_argument("--host", default="0.0.0.0")  # inside the container; published to localhost
     p.add_argument("--port", type=int, default=8787)
+    p = sub.add_parser("gateway", help="run the action gateway (policy + command signing)")
+    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--port", type=int, default=8788)
     p = sub.add_parser("check", help="verify edge API, model key, push and budget")
     p.add_argument("--push", action="store_true", help="also send a test notification")
     p = sub.add_parser("eval", help="grade the agents against the labeled set")
@@ -141,7 +160,8 @@ def main(argv: list[str] | None = None) -> int:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     for noisy in ("httpx", "httpx2", "httpcore", "anthropic"):  # one line per request
         logging.getLogger(noisy).setLevel(logging.WARNING)
-    handler = {"run": cmd_run, "web": cmd_web, "check": cmd_check, "eval": cmd_eval,
+    handler = {"run": cmd_run, "web": cmd_web, "gateway": cmd_gateway, "check": cmd_check,
+               "eval": cmd_eval,
                "digest": cmd_digest}[args.cmd]
     return handler(args, Settings.from_env())
 

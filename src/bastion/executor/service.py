@@ -32,6 +32,7 @@ from bastion.executor.store import ExecStore, canonical
 log = logging.getLogger(__name__)
 
 MAX_COMMAND_LIFETIME_MS = 10 * 60_000
+DEDUP_WINDOW_MS = 10 * 60 * 1000
 CLOCK_SKEW_MS = 60_000
 CHALLENGE_TTL_MS = 5 * 60_000
 ENROLL_TTL_MS = 10 * 60_000
@@ -129,12 +130,28 @@ class Executor:
                 "reason": str(cmd.get("reason", ""))[:400]}
         try:
             args = clean_args(action, cmd.get("args"))
-            self.actions.check(action, args, self.store)
         except Refused as exc:
             self.store.audit("command_refused", {"action": action, "why": str(exc), **meta})
             return {"status": "refused", "detail": str(exc)}
         tier = TIERS[action]
         auto = cmd.get("auto") is True and tier == 1  # tier 2 is never automatic
+        # One event often raises several detections. The same action on the same target
+        # is done (or asked, or shadow-logged) once, not once per detection.
+        same = self.store.pending_same_approval(action_hash(action, args), now)
+        if same and not auto:
+            return {"status": "pending_approval", "approval_id": same["id"],
+                    "duplicate": True, "detail": "already waiting for a passkey approval"}
+        want = "executed" if self.mode() == "on" else "shadow"
+        prior = self.store.recent_same_action(action, args, (want,), now - DEDUP_WINDOW_MS) \
+            if auto else None
+        if prior:
+            return {"status": want, "action_id": prior["id"], "duplicate": True,
+                    "detail": "already handled for an earlier detection"}
+        try:
+            self.actions.check(action, args, self.store)
+        except Refused as exc:
+            self.store.audit("command_refused", {"action": action, "why": str(exc), **meta})
+            return {"status": "refused", "detail": str(exc)}
         request = {"action": action, "args": args, "tier": tier, **meta}
 
         if not auto:

@@ -56,11 +56,33 @@ class Pusher:
         d = inc.decision
         icon = "rotating_light" if d.verdict == Verdict.MALICIOUS else "warning"
         body = (f"{d.verdict.value.capitalize()} ({d.confidence:.0%} confident, "
-                f"{d.severity} severity). Nothing was blocked: Bastion is observing only. "
-                "Open the incident page for details.")
-        click = f"{self.s.console_url}/incident/{inc.id}" if self.s.console_url else ""
+                f"{d.severity} severity). " + response_line(inc))
+        page = "approvals" if any(r.status == "pending_approval" or r.follow_up_approval_id
+                                  for r in inc.responses) else f"incident/{inc.id}"
+        click = f"{self.s.console_url}/{page}" if self.s.console_url else ""
         return self.send(f"Bastion: {d.headline}", body,
                          priority=_PRIORITY.get(d.severity, "default"), tags=icon, click=click)
+
+
+_ACTION_WORDS = {"suspend_process": "paused the program",
+                 "quarantine_file": "moved the file to quarantine",
+                 "disable_launch_item": "disabled the startup item"}
+
+
+def response_line(inc: Incident) -> str:
+    """One sentence on what Bastion did, without paths or command lines."""
+    done = [r for r in inc.responses if r.status == "executed"]
+    waiting = [r for r in inc.responses if r.status == "pending_approval"]
+    shadow = [r for r in inc.responses if r.status == "shadow"]
+    if done:
+        what = " and ".join(_ACTION_WORDS.get(r.action, r.action) for r in done)
+        return f"Contained: Bastion {what}. You can undo this in the console."
+    if waiting:
+        return "Bastion is asking to contain it: approve or deny in the console."
+    if shadow:
+        what = " and ".join(_ACTION_WORDS.get(r.action, r.action) for r in shadow)
+        return f"Shadow mode: Bastion would have {what}. Nothing was changed."
+    return "Nothing was blocked or changed. Open the incident page for details."
 
 
 def digest_text(store: CoreStore, status: dict | None, settings: Settings,

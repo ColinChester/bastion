@@ -157,6 +157,21 @@ class ExecStore:
                                (max(1, min(limit, 200)),)).fetchall()
         return [self._action(r) for r in rows]
 
+    def recent_same_action(self, action: str, args: dict, statuses: tuple[str, ...],
+                           since_ms: int) -> dict | None:
+        marks = ",".join("?" * len(statuses))
+        row = self.db.execute(
+            f"SELECT * FROM actions WHERE action = ? AND args = ? AND status IN ({marks}) "
+            "AND ts_ms >= ? ORDER BY ts_ms DESC LIMIT 1",
+            (action, canonical(args), *statuses, since_ms)).fetchone()
+        return self._action(row) if row else None
+
+    def pending_same_approval(self, action_hash: str, now_ms: int) -> dict | None:
+        row = self.db.execute(
+            "SELECT * FROM approvals WHERE action_hash = ? AND status = 'pending' "
+            "AND expires_ms > ? LIMIT 1", (action_hash, now_ms)).fetchone()
+        return self._approval(row) if row else None
+
     def count_auto_executed_since(self, since_ms: int) -> int:
         return self.db.execute(
             "SELECT COUNT(*) FROM actions WHERE auto = 1 AND status IN "

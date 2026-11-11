@@ -53,10 +53,10 @@ def test_incident_page_renders_and_escapes_untrusted_text(cfg, tmp_path):
     page = client.get(f"/incident/{inc.id}")
     assert page.status_code == 200
     assert XSS not in page.text and "&lt;script&gt;" in page.text
-    assert "get_process_tree" in page.text and "Observe-only" in page.text
+    assert "get_process_tree" in page.text and "Approvals and actions" in page.text
     assert client.get("/incident/nope").status_code == 404
     assert client.get("/?verdict=benign").status_code == 200
-    assert client.post("/").status_code == 405  # read-only
+    assert client.post("/").status_code == 405  # incident pages are read-only
 
 
 def test_labels_load_and_cover_every_rule():

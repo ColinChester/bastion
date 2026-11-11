@@ -47,6 +47,9 @@ class Settings:
     digest_time: str = "08:30"
     timezone: str = "America/New_York"
     console_url: str = ""           # link added to pushes, e.g. the tailnet URL of the page
+    # Phase 3: where proposed actions go. Empty = observe only (nothing is proposed).
+    gateway_url: str = ""
+    gateway_token: str = ""
     prices: dict[str, tuple[float, float, float, float]] = field(
         default_factory=lambda: dict(DEFAULT_PRICES))
 
@@ -74,4 +77,6 @@ class Settings:
             digest_time=e("BASTION_DIGEST_TIME", cls.digest_time),
             timezone=e("TZ", cls.timezone),
             console_url=e("BASTION_CONSOLE_URL", "").rstrip("/"),
+            gateway_url=e("BASTION_GATEWAY_URL", "").rstrip("/"),
+            gateway_token=e("BASTION_GATEWAY_TOKEN", ""),
         )

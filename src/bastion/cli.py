@@ -16,7 +16,8 @@ from bastion.config import Config, ConfigPermissionError, load_config
 
 # Commands that read bastiond's root-only data folder or config.
 NEEDS_ROOT = {"status", "doctor", "report", "test-push", "detections", "enable-edge-api",
-              "backfill-index"}
+              "backfill-index", "enable-executor", "autonomy", "passkey", "actions",
+              "approvals", "approve", "deny", "undo", "audit"}
 
 
 def _need_sudo(cmd: str) -> str:
@@ -169,6 +170,140 @@ def cmd_enable_edge_api(args, cfg) -> int:
     return 0
 
 
+def _executor(cfg, cmd: str):
+    from bastion.executor.service import Executor
+
+    if os.geteuid() != 0:
+        sys.exit(_need_sudo(cmd))
+    return Executor(cfg)
+
+
+def _when(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000).strftime("%b %d %H:%M")
+
+
+def cmd_enable_executor(args, cfg) -> int:
+    """Turn on the executor and record the gateway's public key and the console address."""
+    from bastion.config import DEFAULT_CONFIG_PATH, ENV_CONFIG, set_toml_value
+
+    if os.geteuid() != 0:
+        sys.exit(_need_sudo("enable-executor"))
+    path = Path(args.config or os.environ.get(ENV_CONFIG, DEFAULT_CONFIG_PATH))
+    text = path.read_text() if path.exists() else ""
+    text = set_toml_value(text, "executor", "enabled", "true")
+    text = set_toml_value(text, "executor", "command_public_key", json.dumps(args.public_key))
+    text = set_toml_value(text, "executor", "rp_id", json.dumps(args.rp_id))
+    text = set_toml_value(text, "executor", "origin", json.dumps(args.origin))
+    path.write_text(text)
+    path.chmod(0o600)
+    print("Executor enabled in shadow mode (it logs what it would do and changes nothing). "
+          "Restart bastiond to apply.")
+    return 0
+
+
+def cmd_autonomy(args, cfg) -> int:
+    ex = _executor(cfg, "autonomy")
+    st = ex.status()
+    if args.state == "status":
+        print(f"automatic containment: {'ON' if st['mode'] == 'on' else 'shadow (log only)'}")
+        print(f"shadow period: day {st['shadow_day']} of {st['shadow_days']}")
+        print(f"automatic actions in the last hour: {st['auto_actions_last_hour']} "
+              f"(limit {st['max_auto_actions_per_hour']})")
+        print(f"passkeys: {st['passkeys']}   pending approvals: {st['pending_approvals']}")
+        if not cfg.executor.enabled:
+            print("note: the executor is disabled in config.toml")
+        return 0
+    if args.state == "on":
+        if st["shadow_day"] <= st["shadow_days"] and not args.force:
+            print(f"Still in the shadow period (day {st['shadow_day']} of "
+                  f"{st['shadow_days']}). Review `sudo bastion actions` first; "
+                  "add --force to turn it on anyway.")
+            return 1
+        ex.set_mode("on")
+        print("Automatic containment is ON. Turn it off with: sudo bastion autonomy off")
+    else:
+        ex.set_mode("shadow")
+        print("Automatic containment is off (shadow mode). Existing containment stays in "
+              "place; undo items with: sudo bastion undo ID")
+    return 0
+
+
+def cmd_passkey(args, cfg) -> int:
+    ex = _executor(cfg, "passkey")
+    if args.op == "enroll":
+        code = ex.new_enroll_code()
+        where = (cfg.executor.origin or "the console") + "/enroll"
+        print(f"Open {where} and enter this code within 10 minutes:\n\n    {code}\n")
+    elif args.op == "list":
+        keys = ex.store.list_passkeys()
+        for k in keys:
+            print(f"{k['credential_id'][:16]}…  {k['name']}  added {_when(k['created_ms'])}")
+        print(f"{len(keys)} passkey(s)")
+    else:
+        match = [k for k in ex.store.list_passkeys()
+                 if args.credential_id and k["credential_id"].startswith(args.credential_id)]
+        if len(match) != 1:
+            print("Give the start of exactly one credential id (see: sudo bastion passkey list)")
+            return 1
+        ex.store.remove_passkey(match[0]["credential_id"])
+        ex.store.audit("passkey_removed", {"credential_id": match[0]["credential_id"]})
+        print("Removed.")
+    return 0
+
+
+def cmd_actions(args, cfg) -> int:
+    ex = _executor(cfg, "actions")
+    rows = ex.list_actions(args.limit)
+    for a in rows:
+        target = a["args"].get("path") or a["args"].get("action_id") or ""
+        print(f"{a['id']}  {_when(a['ts_ms'])}  {a['status']:<8} {a['action']}  {target}")
+        print(f"    {'auto' if a['auto'] else 'approved'} · {a['agent'] or '-'} · {a['detail']}")
+    print(f"{len(rows)} action(s). Undo an executed one with: sudo bastion undo ID")
+    return 0
+
+
+def cmd_approvals(args, cfg) -> int:
+    ex = _executor(cfg, "approvals")
+    rows = ex.list_approvals(None if args.all else "pending")
+    for a in rows:
+        c = a["command"]
+        target = c["args"].get("path") or c["args"].get("action_id") or ""
+        print(f"{a['id']}  {_when(a['created_ms'])}  {a['status']:<8} tier {c['tier']}  "
+              f"{c['action']}  {target}")
+        print(f"    {c.get('reason', '')}")
+    print(f"{len(rows)} request(s). Decide with: sudo bastion approve ID  /  deny ID")
+    return 0
+
+
+def cmd_decide(args, cfg) -> int:
+    from bastion.executor.service import Rejected
+
+    ex = _executor(cfg, args.cmd)
+    try:
+        if args.cmd == "approve":
+            result = ex.approve_local(args.id)
+        elif args.cmd == "deny":
+            result = ex.deny(args.id, by="cli")
+        else:
+            result = ex.undo_local(args.id)
+    except Rejected as exc:
+        print(f"Not done: {exc}")
+        return 1
+    print(f"{result['status']}: {result.get('detail', '')}")
+    return 0 if result["status"] in ("executed", "denied", "undone") else 1
+
+
+def cmd_audit(args, cfg) -> int:
+    ex = _executor(cfg, "audit")
+    ok, n, detail = ex.store.verify_audit()
+    if not args.verify:
+        for e in reversed(ex.store.audit_tail(args.limit)):
+            print(f"{e['seq']:>5}  {_when(e['ts_ms'])}  {e['kind']:<22} "
+                  f"{json.dumps(e['body'])[:160]}")
+    print(f"audit log: {n} entries, chain {'intact' if ok else 'BROKEN: ' + detail}")
+    return 0 if ok else 2
+
+
 def cmd_backfill_index(args, cfg) -> int:
     """Index older events so agents can look up process trees and binary history."""
     store = _store(cfg, "backfill-index")
@@ -242,6 +377,27 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--quiet-bastiond-pushes", action="store_true",
                    help="turn off bastiond's own daily summary (the orchestrator sends one)")
     sub.add_parser("backfill-index", help="index older events for agent lookups")
+    p = sub.add_parser("enable-executor", help="turn on the Phase 3 executor (shadow mode)")
+    p.add_argument("--public-key", required=True, help="gateway's Ed25519 public key (base64)")
+    p.add_argument("--rp-id", required=True, help="console host name, e.g. mac.tail1234.ts.net")
+    p.add_argument("--origin", required=True, help="console origin, e.g. https://mac.tail…")
+    p = sub.add_parser("autonomy", help="show or switch automatic containment")
+    p.add_argument("state", nargs="?", default="status", choices=["status", "on", "off"])
+    p.add_argument("--force", action="store_true", help="turn on before the shadow period ends")
+    p = sub.add_parser("passkey", help="manage the passkeys that approve actions")
+    p.add_argument("op", choices=["enroll", "list", "remove"])
+    p.add_argument("credential_id", nargs="?")
+    p = sub.add_parser("actions", help="what the executor did or would have done")
+    p.add_argument("--limit", type=int, default=30)
+    p = sub.add_parser("approvals", help="requests waiting for your approval")
+    p.add_argument("--all", action="store_true")
+    for name, text in (("approve", "approve a request from this terminal"),
+                       ("deny", "deny a request"), ("undo", "undo a containment action")):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("id")
+    p = sub.add_parser("audit", help="show or verify the executor's audit log")
+    p.add_argument("--verify", action="store_true")
+    p.add_argument("--limit", type=int, default=30)
     p = sub.add_parser("rules", help="list and validate detection rules")
     p.add_argument("--dir")
     p = sub.add_parser("replay", help="replay a log file through the pipeline")
@@ -264,6 +420,9 @@ def main(argv: list[str] | None = None) -> int:
         "whoowns": cmd_whoowns, "test-push": cmd_test_push, "report": cmd_report,
         "rules": cmd_rules, "replay": cmd_replay, "detections": cmd_detections,
         "enable-edge-api": cmd_enable_edge_api, "backfill-index": cmd_backfill_index,
+        "enable-executor": cmd_enable_executor, "autonomy": cmd_autonomy,
+        "passkey": cmd_passkey, "actions": cmd_actions, "approvals": cmd_approvals,
+        "approve": cmd_decide, "deny": cmd_decide, "undo": cmd_decide, "audit": cmd_audit,
     }[args.cmd]
     return handler(args, cfg)
 

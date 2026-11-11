@@ -39,14 +39,22 @@ td, th { text-align:left; padding:5px 8px 5px 0; border-bottom:1px solid var(--l
          vertical-align:top; }
 dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; margin:0; }
 dt { color:var(--muted); } dd { margin:0; word-break:break-word; }
+button { font:inherit; padding:6px 14px; border-radius:8px; border:1px solid var(--accent);
+         background:var(--accent); color:#fff; cursor:pointer; margin-right:6px; }
+button.quiet { background:transparent; color:var(--text); border-color:var(--line); }
+button:disabled { opacity:.5; cursor:default; }
+input { font:inherit; padding:6px 8px; border-radius:8px; border:1px solid var(--line);
+        background:var(--card); color:var(--text); }
+nav a { margin-right:14px; }
 </style>
 </head>
 <body><main>
 <header>
   <h1><a href="/" style="color:inherit">Bastion</a></h1>
   <span class="muted">{% block crumb %}{% endblock %}</span>
-  <span class="mode muted">Observe-only: nothing is blocked or changed</span>
+  <span class="mode muted">{{ mode_banner|default("") }}</span>
 </header>
+<nav><a href="/">Incidents</a><a href="/approvals">Approvals and actions</a></nav>
 {% block body %}{% endblock %}
 </main></body>
 </html>

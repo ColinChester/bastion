@@ -12,6 +12,11 @@ It is the Phase 2 form of the plan's domain gateways:
   binds to 127.0.0.1 unless configured otherwise.
 
 `EdgeQueries` holds the logic so it can be tested without HTTP.
+
+Phase 3 adds `/v1/exec/*`, the door to the executor. The bearer token only gets a
+request to that door. Each operation needs its own proof: a command needs the gateway's
+Ed25519 signature, an approval or undo needs a passkey assertion, and registering a
+passkey needs a one-time code from the root CLI. See `bastion.executor`.
 """
 
 from __future__ import annotations
@@ -254,8 +259,33 @@ def dispatch(queries: EdgeQueries, name: str, raw: dict[str, str]):
     return getattr(queries, method)(**kwargs)
 
 
-def _handler(db_path, token: str):
+MAX_BODY = 64 * 1024
+
+# Executor operations reachable over HTTP. Each still needs its own proof: commands a
+# gateway signature, approvals and undo a passkey assertion, registration a one-time code.
+EXEC_POST = {
+    "command": lambda ex, b: ex.handle_command(b),
+    "approval-options": lambda ex, b: ex.approval_options(str(b["approval_id"])),
+    "approve": lambda ex, b: ex.approve(str(b["approval_id"]), str(b["challenge_id"]),
+                                        b["credential"]),
+    "deny": lambda ex, b: ex.deny(str(b["approval_id"])),
+    "undo-options": lambda ex, b: ex.undo_options(str(b["action_id"])),
+    "undo": lambda ex, b: ex.undo(str(b["action_id"]), str(b["challenge_id"]),
+                                  b["credential"]),
+    "passkey-options": lambda ex, b: ex.register_options(str(b["code"])),
+    "passkey-register": lambda ex, b: ex.register_verify(
+        str(b["code"]), str(b["challenge_id"]), b["credential"], str(b.get("name", ""))),
+}
+EXEC_GET = {
+    "status": lambda ex, q: ex.status(),
+    "actions": lambda ex, q: ex.list_actions(int(q.get("limit", 50))),
+    "approvals": lambda ex, q: ex.list_approvals(q.get("status") or None),
+}
+
+
+def _handler(db_path, token: str, executor=None):
     local = threading.local()
+    exec_lock = threading.Lock()  # the executor shares one database connection
 
     def queries() -> EdgeQueries:  # one SQLite connection per server thread
         if not hasattr(local, "q"):
@@ -287,6 +317,9 @@ def _handler(db_path, token: str):
             if not self._authorized():
                 return self._send(401, {"error": "unauthorized"})
             name = url.path.removeprefix("/v1/")
+            if name.startswith("exec/"):
+                return self._exec(EXEC_GET, name.removeprefix("exec/"),
+                                  {k: v[-1] for k, v in parse_qs(url.query).items()})
             if name not in ROUTES:
                 return self._send(404, {"error": "unknown query"})
             raw = {k: v[-1] for k, v in parse_qs(url.query).items()}
@@ -301,10 +334,41 @@ def _handler(db_path, token: str):
                 return self._send(404, {"error": "not found"})
             self._send(200, {"result": result})
 
+        def _exec(self, table: dict, op: str, arg: dict) -> None:
+            from bastion.executor.service import Rejected
+
+            if executor is None:
+                return self._send(404, {"error": "executor is not enabled"})
+            if op not in table:
+                return self._send(404, {"error": "unknown executor operation"})
+            try:
+                with exec_lock:
+                    result = table[op](executor, arg)
+            except Rejected as exc:
+                return self._send(400, {"error": str(exc)})
+            except (KeyError, ValueError, TypeError) as exc:
+                return self._send(400, {"error": f"bad request: {exc}"})
+            except Exception:
+                log.exception("executor operation %s failed", op)
+                return self._send(500, {"error": "executor error"})
+            self._send(200, {"result": result})
+
         def do_POST(self):  # noqa: N802
             if not self._authorized():
                 return self._send(401, {"error": "unauthorized"})
-            parts = urlparse(self.path).path.strip("/").split("/")
+            path = urlparse(self.path).path
+            if path.startswith("/v1/exec/"):
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < length <= MAX_BODY:
+                        return self._send(413, {"error": "body missing or too large"})
+                    body = json.loads(self.rfile.read(length))
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be a JSON object")
+                except ValueError as exc:
+                    return self._send(400, {"error": f"bad request: {exc}"})
+                return self._exec(EXEC_POST, path.removeprefix("/v1/exec/"), body)
+            parts = path.strip("/").split("/")
             if len(parts) == 4 and parts[:2] == ["v1", "detections"] and parts[3] == "ack":
                 try:
                     ok = queries().ack(int(parts[2]))
@@ -324,7 +388,19 @@ def start_edge_api(cfg: Config) -> ThreadingHTTPServer | None:
     if len(api.token) < 32:
         log.error("edge API not started: edge_api.token must be at least 32 characters")
         return None
-    server = ThreadingHTTPServer((api.bind, api.port), _handler(cfg.db_path, api.token))
+    executor = None
+    if cfg.executor.enabled:
+        from bastion.executor.service import Executor
+
+        if len(cfg.executor.command_public_key) < 40:
+            log.error("executor not started: executor.command_public_key is not set")
+        else:
+            executor = Executor(cfg)
+            log.info("executor enabled: mode=%s (shadow day %d)", executor.mode(),
+                     executor.shadow_day())
+    server = ThreadingHTTPServer((api.bind, api.port),
+                                 _handler(cfg.db_path, api.token, executor))
+    server.executor = executor
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, name="edge-api", daemon=True).start()
     log.info("edge API listening on %s:%d", api.bind, server.server_address[1])

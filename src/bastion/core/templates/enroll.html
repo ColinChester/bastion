@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Add a passkey · Bastion{% endblock %}
+{% block crumb %}add a passkey{% endblock %}
+{% block body %}
+<div class="card">
+  <p style="margin-top:0">A passkey lets this device approve Bastion's actions with Face ID or
+    Touch ID. The Mac checks every approval itself.</p>
+  <ol>
+    <li>On the Mac, run <code>sudo bastion passkey enroll</code>. It prints an 8-digit code.</li>
+    <li>Enter the code here within 10 minutes.</li>
+  </ol>
+  <form id="enroll-form">
+    <p><label>Code<br><input name="code" inputmode="numeric" pattern="[0-9]{8}" maxlength="8"
+      required autocomplete="off"></label></p>
+    <p><label>Name for this passkey<br><input name="name" maxlength="40"
+      placeholder="iPhone"></label></p>
+    <button type="submit">Create passkey</button>
+    <span id="enroll-status" class="muted"></span>
+  </form>
+</div>
+<script src="/static/passkey.js"></script>
+{% endblock %}

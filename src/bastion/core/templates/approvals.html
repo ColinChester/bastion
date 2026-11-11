@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Approvals · Bastion{% endblock %}
+{% block crumb %}approvals and actions{% endblock %}
+{% block body %}
+{% if error %}<div class="card malicious">{{ error }}</div>{% endif %}
+{% if status %}
+<div class="card stats">
+  <div class="stat"><b>{{ "On" if status.mode == "on" else "Shadow" }}</b>
+    <span class="muted">automatic containment{% if status.mode != "on" %}
+      (day {{ status.shadow_day }} of {{ status.shadow_days }}){% endif %}</span></div>
+  <div class="stat"><b>{{ approvals|length }}</b><span class="muted">waiting for you</span></div>
+  <div class="stat"><b>{{ status.auto_actions_last_hour }}/{{ status.max_auto_actions_per_hour }}</b>
+    <span class="muted">automatic actions this hour</span></div>
+  <div class="stat"><b>{{ status.passkeys }}</b><span class="muted">passkeys
+    {% if status.passkeys == 0 %}· <a href="/enroll">add one</a>{% endif %}</span></div>
+</div>
+{% endif %}
+
+<h2>Waiting for your approval</h2>
+{% for a in approvals %}
+<div class="card" data-item>
+  <div class="row">
+    <span class="pill {{ 'malicious' if a.command.tier == 2 else 'suspicious' }}">
+      {{ "permanent" if a.command.tier == 2 else "reversible" }}</span>
+    <strong>{{ a.label }}</strong>
+    <span class="when muted">{{ a.when }}</span>
+  </div>
+  <dl style="margin:8px 0">
+    <dt>Target</dt><dd><code>{{ a.target }}</code></dd>
+    <dt>Why</dt><dd>{{ a.command.reason or "—" }}</dd>
+    {% if a.command.incident_id %}<dt>Incident</dt>
+    <dd><a href="/incident/{{ a.command.incident_id }}">{{ a.command.incident_id }}</a></dd>{% endif %}
+  </dl>
+  <button data-passkey="approve" data-id="{{ a.id }}">Approve with passkey</button>
+  <button data-plain="deny" data-id="{{ a.id }}" class="quiet">Deny</button>
+  <span data-status class="muted"></span>
+</div>
+{% else %}
+<div class="card muted">Nothing is waiting.</div>
+{% endfor %}
+
+<h2>Recent actions</h2>
+{% for a in actions %}
+<div class="card" data-item>
+  <div class="row">
+    <span class="pill {{ a.css }}">{{ a.status_label }}</span>
+    <strong>{{ a.label }}</strong>
+    <span class="when muted">{{ a.when }}</span>
+  </div>
+  <div class="muted" style="font-size:13px;margin:4px 0 8px">
+    <code>{{ a.target }}</code> · {{ "automatic" if a.auto else "approved by you" }}
+    {% if a.agent %}· {{ a.agent }}{% endif %} · {{ a.detail }}
+    {% if a.incident_id %}· <a href="/incident/{{ a.incident_id }}">incident</a>{% endif %}
+  </div>
+  {% if a.status == "executed" and a.tier == 1 %}
+  <button data-passkey="undo" data-id="{{ a.id }}">Undo with passkey</button>
+  {% if a.action != "suspend_process" %}
+  <button data-plain="request-delete" data-id="{{ a.id }}" class="quiet">Request permanent deletion</button>
+  {% endif %}
+  <span data-status class="muted"></span>
+  {% endif %}
+</div>
+{% else %}
+<div class="card muted">No actions yet.</div>
+{% endfor %}
+<script src="/static/passkey.js"></script>
+{% endblock %}

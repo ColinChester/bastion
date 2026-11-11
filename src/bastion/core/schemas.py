@@ -15,12 +15,13 @@ class Verdict(StrEnum):
     INCONCLUSIVE = "inconclusive"  # not enough evidence, or the agent failed
 
 
-# The fixed action vocabulary per domain (from the plan's agent roster). In Phase 2 these
-# are recorded as proposals only: nothing executes until Phase 3's gateways exist.
+# The fixed containment vocabulary per domain. An agent only names an action; the target
+# comes from the detection (core/playbook.py), the gateway's Cedar policy decides whether
+# it may run, and the executor on the Mac re-checks the target.
 ACTIONS: dict[str, tuple[str, ...]] = {
-    "sentry": ("kill_process", "suspend_process", "quarantine_file", "santa_block_rule"),
-    "anchor": ("disable_launch_item", "remove_login_item", "delete_plist"),
-    "tide": ("block_destination", "cut_network"),
+    "sentry": ("suspend_process", "quarantine_file"),
+    "anchor": ("disable_launch_item",),
+    "tide": (),   # network blocking arrives with a later phase
 }
 ALL_ACTIONS = tuple(a for acts in ACTIONS.values() for a in acts)
 
@@ -101,6 +102,19 @@ class ToolCallRecord(BaseModel):
     error: str | None = None
 
 
+class ActionResponse(BaseModel):
+    """What happened to one proposed action after the gateway and executor saw it."""
+
+    action: str
+    status: str          # executed | shadow | pending_approval | denied | refused | ...
+    detail: str = ""
+    policy: str = ""     # auto | approval | deny
+    policy_ids: list[str] = Field(default_factory=list)
+    action_id: str | None = None
+    approval_id: str | None = None
+    follow_up_approval_id: str | None = None
+
+
 class Incident(BaseModel):
     id: str
     detection_id: int
@@ -116,3 +130,4 @@ class Incident(BaseModel):
     cost_usd: float = 0.0
     models: dict[str, str] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
+    responses: list[ActionResponse] = Field(default_factory=list)

@@ -33,13 +33,26 @@
 </div>
 
 {% if inc.finding.proposed_actions %}
-<h2>Proposed actions (not executed)</h2>
+<h2>Proposed by the analyst</h2>
 <div class="card"><table>
   <tr><th>Action</th><th>Target</th><th>Reason</th></tr>
   {% for a in inc.finding.proposed_actions %}
   <tr><td><code>{{ a.action }}</code></td><td>{{ a.target }}</td><td>{{ a.reason }}</td></tr>
   {% endfor %}
 </table></div>
+{% endif %}
+
+{% if inc.responses %}
+<h2>What Bastion did</h2>
+<div class="card"><table>
+  <tr><th>Action</th><th>Outcome</th><th>Policy</th><th>Detail</th></tr>
+  {% for r in inc.responses %}
+  <tr><td><code>{{ r.action }}</code></td><td>{{ r.status.replace("_", " ") }}</td>
+    <td>{{ r.policy }}{% if r.policy_ids %} ({{ r.policy_ids|join(", ") }}){% endif %}</td>
+    <td>{{ r.detail }}</td></tr>
+  {% endfor %}
+</table>
+<p class="muted" style="margin-bottom:0"><a href="/approvals">Approvals and undo</a></p></div>
 {% endif %}
 
 <h2>What the agent looked at</h2>
