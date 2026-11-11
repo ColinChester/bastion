@@ -4,9 +4,12 @@ Bastion is an autonomous security agent system for a single Mac. When it's finis
 orchestrator agent will triage what the sensors see, contain threats on its own, and ask
 for approval on the phone before doing anything destructive.
 
-**Where it is now:** Phases 0–2 are complete: sensors and detections, plus the
-orchestrator and first three agents ([evaluation](docs/phase2-eval.md): 45 of 46 correct). Everything is observe-only: it
-watches, investigates and reports, and blocks nothing.
+**Where it is now:** Phases 0–2 are complete and Phase 3 is built and in its shadow
+period. Sensors and detections feed an orchestrator and three agents
+([evaluation](docs/phase2-eval.md): 45 of 46 correct). Bastion can now pause a program,
+quarantine a file or disable a launch item, with passkey approval for anything permanent
+([docs/phase3.md](docs/phase3.md)). Until the 14-day shadow period ends it only logs
+what it would have done.
 
 - **Sensor layer** (`bastiond`, below): records what happens on the Mac and raises
   detections.
@@ -14,6 +17,10 @@ watches, investigates and reports, and blocks nothing.
   routes each detection to a domain agent (Sentry for execution, Anchor for persistence,
   Tide for network). The agent investigates with read-only tools and returns a structured
   verdict, which you read on an incident page or get as a push.
+- **Action layer** ([docs/phase3.md](docs/phase3.md)): a gateway checks each proposed
+  action against [Cedar policies](policy/bastion.cedar) and signs it; the executor in
+  bastiond verifies, re-checks the target, and acts or waits for your passkey. Every step
+  lands in a hash-chained audit log and every containment can be undone.
 
 ```
 osquery (Endpoint Security) ─┐
@@ -73,6 +80,12 @@ Commands that read Bastion's data or config need `sudo`, because that folder is 
 | `./scripts/test-triggers.sh` | fire every detection once with harmless decoys and check it was recorded |
 | `./scripts/bootstrap.sh --update` | reinstall and restart Bastion after a `git pull` |
 | `./scripts/setup-phase2.sh` | set up the agent layer (containers, edge API, pushes) |
+| `./scripts/setup-phase3.sh` | set up actions and approvals (starts in shadow mode) |
+| `sudo bastion autonomy [on\|off]` | show or switch automatic containment |
+| `sudo bastion passkey enroll` | register a phone or Mac passkey for approvals |
+| `sudo bastion actions` / `approvals` | what Bastion did or would have done; what's waiting |
+| `sudo bastion approve\|deny\|undo ID` | decide or undo from the terminal |
+| `sudo bastion audit --verify` | check the action log hasn't been altered |
 | `bastion rules [--dir rules]` | load and validate the Sigma rules |
 | `bastion replay {osquery,santa,unified_log} FILE` | run recorded logs through the pipeline into a scratch DB |
 
@@ -81,7 +94,8 @@ Commands that read Bastion's data or config need `sudo`, because that folder is 
 - Secrets are redacted before anything is written to disk.
 - Process environment variables aren't collected.
 - Push notifications contain rule titles and counts only, never paths or command lines.
-- All data stays in `/Library/Application Support/Bastion` (root-only, 30-day retention).
+- All data stays in `/Library/Application Support/Bastion` (root-only; events 14 days,
+  detections 90).
 
 ## Development
 
@@ -99,7 +113,7 @@ system commands by a fake runner.
 | --- | --- |
 | 0–1 ✅ | Sensors, OCSF pipeline, redaction, Sigma rules, posture audit, shadow week ([review](docs/phase1-review.md)) |
 | 2 ✅ | LangGraph orchestrator and three core agents, self-hosted ntfy, daily digest, tracing, read-only incident page |
-| 3 | Per-domain gateways with Cedar policies, passkey-signed approvals, undo log, first autonomous containment (after 14 days in shadow) |
+| 3 🕒 | Action gateway with Cedar policies, signed commands, passkey approvals, undo and audit log. Built; in its 14-day shadow period ([details](docs/phase3.md)) |
 | 4 | Move to an Oracle Cloud VM over Tailscale, NATS JetStream, dead-man's switch, remaining agents |
 | 5 | Validation with Atomic Red Team and prompt-injection tests, metrics, demo |
 

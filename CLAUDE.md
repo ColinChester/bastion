@@ -10,11 +10,20 @@
 - Sigma rules live in `rules/<category>/`. Every new rule needs a positive and a benign case in
   `tests/test_rules.py`, and must use only fields in `detect/fields.py` (or dotted OCSF paths).
 - Anything that runs macOS commands goes through `macos.Runner` so tests can fake it.
-- Everything is observe-only through Phase 2. Don't add actions that change the system (kill,
-  quarantine, block) until Phase 3's policy engine and root executor exist.
-- The orchestrator (`src/bastion/core`) reaches the Mac only through `edge_api.py`. Keep that API
-  read-only, typed and bounded: no free-form queries, and no new write besides acknowledging a
-  detection.
+- Only `src/bastion/executor` changes the system. Its actions are the fixed, typed set in
+  `executor/actions.py` (tier 1 reversible, tier 2 permanent). Don't add kill, block or
+  free-form delete, and don't add an action without an undo (tier 1) or an approval (tier 2),
+  a Cedar rule in `policy/`, and tests for both.
+- The executor runs a command only if it is signed by the gateway key, and re-validates every
+  target itself. Tier 2 and anything non-automatic waits for a passkey. Shadow mode is the
+  default; only the root CLI (`bastion autonomy`) switches it. Never add an HTTP path that
+  changes the mode, skips the signature or approves without a passkey.
+- Action targets come from the detection (`core/playbook.py`), never from model output.
+- The orchestrator (`src/bastion/core`) reaches the Mac only through `edge_api.py`. Queries
+  stay read-only, typed and bounded: no free-form queries. The only writes are acknowledging
+  a detection and the `/v1/exec/*` routes, which hand off to the executor.
+- The signing key lives only in the gateway container (`deploy/.env.gateway`). Core and web
+  never get it; web never gets the model API key.
 - Agents return Pydantic models (`core/schemas.py`), never free text. Limits (tool rounds, spend
   caps, routing, notification guardrails) are enforced in code, not in prompts. Telemetry given
   to a model is wrapped with `untrusted(...)`.

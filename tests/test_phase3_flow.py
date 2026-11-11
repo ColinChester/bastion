@@ -382,3 +382,40 @@ def test_root_cli_runs_the_switches(tmp_path, monkeypatch, capsys):
     assert cli.main([*base, "deny", "nope"]) == 1
     assert cli.main([*base, "audit", "--verify"]) == 0
     assert "intact" in capsys.readouterr().out
+
+
+def test_worker_and_console_share_one_gateway_switch(monkeypatch, tmp_path):
+    """Regression: `bastion-core run` once built its worker without the gateway, so
+    nothing would ever have been proposed."""
+    from bastion.core import cli as core_cli
+    from bastion.core import worker as worker_mod
+
+    assert core_cli._gateway(Settings(data_dir=tmp_path)) is None
+    s = Settings(data_dir=tmp_path, edge_token="e" * 40, gateway_url="http://gateway:8788",
+                 gateway_token="g" * 40)
+    assert core_cli._gateway(s) is not None
+    seen = {}
+
+    class FakeWorker:
+        def __init__(self, *a, gateway=None, **kw):
+            seen["gateway"] = gateway
+
+        def run_forever(self):
+            return None
+
+    monkeypatch.setattr(worker_mod, "Worker", FakeWorker)
+    monkeypatch.setattr(core_cli, "_model", lambda: None)
+    monkeypatch.setattr("bastion.core.tracing.setup_tracing", lambda: None)
+    assert core_cli.cmd_run(None, s) == 0
+    assert seen["gateway"] is not None
+
+
+def test_doctor_reports_the_executor(cfg):
+    from bastion.doctor import _executor_checks
+
+    assert _executor_checks(cfg) == []
+    cfg.executor.enabled, cfg.executor.command_public_key = True, Signer().public
+    got = {h.component: h for h in _executor_checks(cfg)}
+    assert "shadow mode, day 1" in got["executor"].detail
+    assert got["passkey"].status == "warn" and "enroll" in got["passkey"].fix
+    assert got["audit log"].status == "ok"

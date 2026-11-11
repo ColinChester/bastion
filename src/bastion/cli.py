@@ -201,6 +201,32 @@ def cmd_enable_executor(args, cfg) -> int:
     return 0
 
 
+def cmd_gateway_keygen(args, cfg) -> int:
+    """Make the gateway's Ed25519 signing key. The private half goes to --out (mode 600)
+    and is never printed; the public half is printed for `enable-executor`."""
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    out = Path(args.out)
+    if out.exists():
+        sys.exit(f"{out} already exists; delete it first if you really want a new key")
+    key = Ed25519PrivateKey.generate()
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(base64.b64encode(key.private_bytes(
+            Encoding.Raw, PrivateFormat.Raw, NoEncryption())).decode() + "\n")
+    print(base64.b64encode(key.public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw)).decode())
+    return 0
+
+
 def cmd_autonomy(args, cfg) -> int:
     ex = _executor(cfg, "autonomy")
     st = ex.status()
@@ -381,6 +407,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--public-key", required=True, help="gateway's Ed25519 public key (base64)")
     p.add_argument("--rp-id", required=True, help="console host name, e.g. mac.tail1234.ts.net")
     p.add_argument("--origin", required=True, help="console origin, e.g. https://mac.tail…")
+    p = sub.add_parser("gateway-keygen", help="create the gateway's command-signing key")
+    p.add_argument("--out", required=True, help="file for the private key (mode 600)")
     p = sub.add_parser("autonomy", help="show or switch automatic containment")
     p.add_argument("state", nargs="?", default="status", choices=["status", "on", "off"])
     p.add_argument("--force", action="store_true", help="turn on before the shadow period ends")
@@ -421,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
         "rules": cmd_rules, "replay": cmd_replay, "detections": cmd_detections,
         "enable-edge-api": cmd_enable_edge_api, "backfill-index": cmd_backfill_index,
         "enable-executor": cmd_enable_executor, "autonomy": cmd_autonomy,
+        "gateway-keygen": cmd_gateway_keygen,
         "passkey": cmd_passkey, "actions": cmd_actions, "approvals": cmd_approvals,
         "approve": cmd_decide, "deny": cmd_decide, "undo": cmd_decide, "audit": cmd_audit,
     }[args.cmd]

@@ -8,10 +8,11 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY rules ./rules
+COPY policy ./policy
 COPY tests/labeled_events ./tests/labeled_events
 RUN pip install --no-cache-dir '.[core,tracing]'
 
 USER bastion
-ENV BASTION_DATA_DIR=/data PYTHONUNBUFFERED=1
+ENV BASTION_DATA_DIR=/data BASTION_POLICY_DIR=/app/policy PYTHONUNBUFFERED=1
 VOLUME /data
 CMD ["bastion-core", "run"]

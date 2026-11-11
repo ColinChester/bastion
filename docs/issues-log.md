@@ -9,6 +9,9 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 36 | 2026-11-11 | Install | Phase 3 setup script would have run a command from its closing message | fixed |
+| 35 | 2026-11-11 | Agents | The worker was started without the action gateway, so nothing would be proposed | fixed |
+| 34 | 2026-11-11 | Executor | One event with two detections contained the same target twice | fixed |
 | 33 | 2026-11-11 | Detection | Merged file detections could keep the copy without the writing process | fixed |
 | 32 | 2026-11-11 | Agents | First evaluation: agents called 28 of the trigger tests benign | fixed |
 | 31 | 2026-11-11 | Agents | Warden review failed: Sonnet 5.5 rejects forced tool calls | fixed |
@@ -44,6 +47,46 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 36. Phase 3 setup script would have run a command from its closing message
+
+**Symptom.** Caught by shellcheck before the script was ever run: the "what next" text at
+the end of `setup-phase3.sh` contained a command in backticks.
+
+**Cause.** The message is an unquoted heredoc, where backticks are command substitution.
+Printing the help text would have executed `sudo bastion actions`.
+
+**Fix.** Backticks removed from the heredoc. Shellcheck now also runs locally before
+committing (it already ran in CI).
+
+## 35. The worker was started without the action gateway, so nothing would be proposed
+
+**Symptom.** Found while wiring the containers, before release: `bastion-core web` built
+a gateway client, but `bastion-core run` (the worker that proposes actions) did not.
+Phase 3 would have looked healthy and never proposed anything.
+
+**Cause.** The gateway client was constructed inline in one command instead of in a
+shared helper. The flow tests built the worker by hand, so they didn't cover the CLI.
+
+**Fix.** One `_gateway(settings)` helper used by `run`, `web` and `check`.
+
+Test: `test_worker_and_console_share_one_gateway_switch`.
+
+## 34. One event with two detections contained the same target twice
+
+**Symptom.** In the first end-to-end test, a binary run from a temp folder raised two
+detections. The second incident paused the already-paused process again and reported the
+quarantine as "refused" because the file was already in the vault.
+
+**Cause.** The executor treated every command as new. Several rules firing on one event
+is normal (#12), so duplicates would have been routine, used up the hourly limit and
+inflated the shadow-mode review.
+
+**Fix.** The executor answers a repeat of the same action on the same target with the
+earlier result: within 10 minutes for automatic and shadow actions, and for as long as an
+identical approval request is still pending.
+
+Test: `test_one_event_two_detections_one_action`.
 
 ## 33. Merged file detections could keep the copy without the writing process
 

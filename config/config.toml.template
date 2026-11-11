@@ -52,3 +52,15 @@ enabled = false
 bind = "127.0.0.1"
 port = 8765
 token = ""
+
+[executor]
+# Phase 3: the part of bastiond that can change the system. Off until
+# scripts/setup-phase3.sh turns it on. It accepts only commands signed by the gateway's
+# key, starts in shadow mode (logs what it would do, changes nothing), and is switched to
+# real actions only by `sudo bastion autonomy on`.
+enabled = false
+command_public_key = ""
+rp_id = ""       # console host name; passkeys are bound to it
+origin = ""      # console address, e.g. https://<mac>.<tailnet>.ts.net
+shadow_days = 14
+max_auto_actions_per_hour = 5

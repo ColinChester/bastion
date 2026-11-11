@@ -1,4 +1,5 @@
-# Bastion Phase 2 stack, on the Mac. Start it with scripts/setup-phase2.sh.
+# Bastion stack, on the Mac. Start it with scripts/setup-phase2.sh; scripts/setup-phase3.sh
+# adds the action gateway (the "actions" profile, switched on in deploy/.env).
 #
 # Every published port binds to 127.0.0.1. The phone reaches the incident page and ntfy
 # through Tailscale Serve (tailnet only), never the open internet.
@@ -13,6 +14,7 @@ x-core: &core
     BASTION_EDGE_URL: http://host.docker.internal:8765
     BASTION_NTFY_URL: http://ntfy:80
     PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006
+    BASTION_GATEWAY_URL: http://gateway:8788
   # host.docker.internal (the Mac itself) is provided by OrbStack and Docker Desktop.
   volumes:
     - core-data:/data
@@ -32,8 +34,33 @@ services:
   web:
     <<: *core
     command: ["bastion-core", "web"]
+    environment:
+      BASTION_EDGE_URL: http://host.docker.internal:8765
+      BASTION_GATEWAY_URL: http://gateway:8788
+      # The console never talks to a model, so it doesn't get the API key.
+      ANTHROPIC_API_KEY: ""
     ports:
       - "127.0.0.1:8787:8787"
+
+  gateway:
+    # Phase 3. The only container that holds the command-signing key. It decides each
+    # proposed action with the Cedar policies in policy/ and signs what is allowed.
+    # It has no model key, no published port and no data volume.
+    profiles: [actions]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["bastion-core", "gateway"]
+    env_file:
+      - path: .env.gateway
+        required: false
+    environment:
+      BASTION_EDGE_URL: http://host.docker.internal:8765
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
   ntfy:
     image: binwiederhier/ntfy:v2.11.0

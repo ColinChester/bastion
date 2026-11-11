@@ -103,6 +103,7 @@ def check_all(cfg: Config, runner: Runner | None = None, now: float | None = Non
                           "logs: /Library/Logs/Bastion/bastiond.log"))
 
     res.extend(_ingest_checks(cfg, now))
+    res.extend(_executor_checks(cfg))
 
     # notifications
     if cfg.notify.ntfy_topic and cfg.notify.mode != "off":
@@ -159,6 +160,37 @@ def _ingest_checks(cfg: Config, now: float) -> list[Health]:
                 out.append(Health(f"{name} feed", "ok", f"last event {int(age)} s ago"))
     finally:
         store.close()
+    return out
+
+
+def _executor_checks(cfg: Config) -> list[Health]:
+    """Phase 3. Only reported once the executor has been turned on."""
+    if not cfg.executor.enabled:
+        return []
+    try:
+        from bastion.executor.service import Executor
+
+        ex = Executor(cfg)
+        st = ex.status()
+        intact, n, detail = ex.store.verify_audit()
+    except Exception as exc:  # noqa: BLE001 - doctor reports, never crashes
+        return [Health("executor", "fail", f"can't open the executor ({exc})",
+                       "sudo launchctl kickstart -k system/com.bastion.bastiond")]
+    out = []
+    if st["mode"] == "on":
+        out.append(Health("executor", "ok", "automatic containment is ON"))
+    else:
+        out.append(Health("executor", "ok", f"shadow mode, day {st['shadow_day']} of "
+                                            f"{st['shadow_days']} (logs only, changes nothing)"))
+    if not st["passkeys"]:
+        out.append(Health("passkey", "warn", "no passkey registered, so nothing can be "
+                          "approved from the phone", "sudo bastion passkey enroll"))
+    else:
+        out.append(Health("passkey", "ok", f"{st['passkeys']} registered"))
+    out.append(Health("audit log", "ok" if intact else "fail",
+                      f"{n} entries, {detail}",
+                      "" if intact else "the action log was edited outside Bastion; "
+                      "see docs/phase3.md"))
     return out
 
 

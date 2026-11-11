@@ -80,7 +80,7 @@
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const out = document.getElementById("enroll-status");
-      const code = form.code.value.trim();
+      const code = form.elements.code.value.trim();
       try {
         out.className = "muted";
         out.textContent = "Waiting for your passkey…";
@@ -91,7 +91,7 @@
         (o.excludeCredentials || []).forEach((c) => { c.id = fromB64u(c.id); });
         const cred = await navigator.credentials.create({ publicKey: o });
         await post("/api/enroll/verify", {
-          code, challenge_id: start.challenge_id, name: form.name.value.trim(),
+          code, challenge_id: start.challenge_id, name: form.elements.name.value.trim(),
           credential: {
             id: cred.id, rawId: toB64u(cred.rawId), type: cred.type,
             response: {

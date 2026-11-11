@@ -22,6 +22,15 @@ def _model():
     return AnthropicClient()
 
 
+def _gateway(s: Settings):
+    """The action gateway client, or None while Phase 3 isn't set up (observe-only)."""
+    if not (s.gateway_url and len(s.gateway_token) >= 32):
+        return None
+    from bastion.core.worker import GatewayClient
+
+    return GatewayClient(s.gateway_url, s.gateway_token)
+
+
 def cmd_run(args, s: Settings) -> int:
     from bastion.core.tracing import setup_tracing
     from bastion.core.worker import Worker
@@ -30,7 +39,8 @@ def cmd_run(args, s: Settings) -> int:
     if len(s.edge_token) < 32:
         sys.exit("BASTION_EDGE_TOKEN is missing (run scripts/setup-phase2.sh).")
     store = CoreStore(s.db_path, s.timezone)
-    Worker(s, store, EdgeClient(s.edge_url, s.edge_token), _model()).run_forever()
+    Worker(s, store, EdgeClient(s.edge_url, s.edge_token), _model(),
+           gateway=_gateway(s)).run_forever()
     return 0
 
 
@@ -40,12 +50,7 @@ def cmd_web(args, s: Settings) -> int:
     from bastion.core.web import create_app
 
     edge = EdgeClient(s.edge_url, s.edge_token) if len(s.edge_token) >= 32 else None
-    gateway = None
-    if s.gateway_url and s.gateway_token:
-        from bastion.core.worker import GatewayClient
-
-        gateway = GatewayClient(s.gateway_url, s.gateway_token)
-    uvicorn.run(create_app(s, edge=edge, gateway=gateway), host=args.host, port=args.port,
+    uvicorn.run(create_app(s, edge=edge, gateway=_gateway(s)), host=args.host, port=args.port,
                 log_level="warning", proxy_headers=True, forwarded_allow_ips="*")
     return 0
 
@@ -101,6 +106,25 @@ def cmd_check(args, s: Settings) -> int:
              "push", f"test push sent via {s.ntfy_url}")
     else:
         line(True, "push", f"configured for {s.ntfy_url} (add --push to send a test)")
+    if _gateway(s) is not None:
+        import httpx
+
+        try:
+            httpx.get(f"{s.gateway_url}/healthz", timeout=5).raise_for_status()
+            ex = EdgeClient(s.edge_url, s.edge_token).exec_get("status")
+            mode = ("automatic containment ON" if ex["mode"] == "on" else
+                    f"shadow mode, day {ex['shadow_day']} of {ex['shadow_days']}")
+            line(True, "actions", f"gateway up, executor in {mode}, "
+                 f"{ex['passkeys']} passkey(s), {ex['pending_approvals']} waiting for approval")
+            if not ex["passkeys"]:
+                print("       no passkey yet: run `sudo bastion passkey enroll` on the Mac")
+        except httpx.HTTPError as exc:
+            line(False, "actions", f"gateway not reachable at {s.gateway_url} ({exc})")
+        except EdgeError as exc:
+            line(False, "actions", f"executor not reachable: {exc}. Run "
+                 "scripts/setup-phase3.sh")
+    else:
+        print("[ -- ] actions    not set up (scripts/setup-phase3.sh); observe-only")
     store = CoreStore(s.db_path, s.timezone)
     line(True, "budget", f"${store.spend_today():.2f} today (cap ${s.daily_cap_usd:.2f}), "
          f"${store.spend_month():.2f} this month (cap ${s.monthly_cap_usd:.0f})")

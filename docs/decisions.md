@@ -78,3 +78,35 @@ bodies.
 
 **Phoenix for tracing, self-hosted.** One container instead of Langfuse's four, which
 matters on a 16 GB Mac. Traces contain telemetry, so they never go to a hosted tracer.
+
+## Phase 3
+
+**Models name an action; code picks the target.** An agent can propose "quarantine_file"
+but the path comes from the detection record, fetched by the gateway. A prompt injection
+that says "delete ~/Documents" has nowhere to put that path.
+
+**One gateway with per-domain Cedar policies, not one gateway per agent.** The plan drew
+a gateway per domain. With five actions, a single small service whose policy file names
+which agent may do what gives the same separation with one signing key to protect. It can
+be split when Phase 4 adds domains.
+
+**Two independent checks.** The gateway decides with policy; the executor re-validates
+every target with its own hard-coded rules. Either can refuse; neither trusts the other.
+
+**Approvals are verified on the Mac.** The console only relays WebAuthn messages. The
+signed challenge covers a hash of the action and target, so the console (or anything in
+a container) can't turn an approval into a different action.
+
+**Undo needs the passkey; deny doesn't.** Undo releases something that was contained, so
+it is as sensitive as approving. Deny only ever leaves things as they are.
+
+**Going live is a root command, not a setting.** `sudo bastion autonomy on` writes to the
+executor's own database. Nothing reachable over HTTP can flip it.
+
+**Suspend, not kill.** A paused process keeps its memory and open files for inspection
+and resumes cleanly if Bastion was wrong.
+
+**Privilege split deferred.** Splitting bastiond into an unprivileged detector and a root
+executor is the right end state and is scheduled with the Phase 4 move, when the
+detector's inputs change anyway.
+

@@ -17,3 +17,7 @@ deploy/vm/*.local.yaml
 # Phase 2 secrets
 deploy/.env
 deploy/.edge-token
+
+# Phase 3 secrets
+deploy/.env.gateway
+deploy/.gateway-key
