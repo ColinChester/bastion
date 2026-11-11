@@ -60,6 +60,50 @@ class EdgeApiConfig:
 
 
 @dataclass
+class ExecutorConfig:
+    """Phase 3: the only code that changes the system. Off until set up."""
+    enabled: bool = False
+    # Ed25519 public key (base64) of the gateway that may send commands.
+    command_public_key: str = ""
+    # WebAuthn relying party: the console's tailnet host name and its https origin.
+    rp_id: str = ""
+    origin: str = ""
+    shadow_days: int = 14
+    max_auto_actions_per_hour: int = 5
+    approval_ttl_hours: int = 168
+    max_quarantine_bytes: int = 2 * 1024**3
+    # Files may only be quarantined from under these roots (after resolving symlinks)...
+    quarantine_roots: list[str] = field(default_factory=lambda: [
+        "/Users/", "/private/tmp/", "/private/var/tmp/", "/private/var/folders/"])
+    # ...and never when the path contains one of these.
+    quarantine_excludes: list[str] = field(default_factory=lambda: [
+        "/Library/Keychains/", "/.ssh/", "/Library/Mail/", "/Library/Messages/",
+        ".photoslibrary/", "/Library/Application Support/Bastion/", "/Library/Mobile Documents/",
+    ])
+    launch_dirs: list[str] = field(default_factory=lambda: [
+        "/Library/LaunchAgents/", "/Library/LaunchDaemons/"])
+    user_launch_dir_pattern: str = r"^/Users/[^/]+/Library/LaunchAgents/"
+    protected_process_names: list[str] = field(default_factory=lambda: [
+        "launchd", "kernel_task", "WindowServer", "loginwindow", "Finder", "Dock",
+        "SystemUIServer", "santad", "Santa", "com.northpolesec.santa.daemon", "LuLu",
+        "com.objective-see.lulu.extension", "BlockBlock", "BlockBlock Helper", "osqueryd",
+        "bastiond", "sshd", "tailscaled", "Tailscale", "OrbStack", "OrbStack Helper",
+    ])
+    protected_path_prefixes: list[str] = field(default_factory=lambda: [
+        "/System/", "/usr/libexec/", "/sbin/", "/usr/sbin/", "/opt/bastion/", "/opt/osquery/",
+        "/Applications/Santa.app/", "/Applications/LuLu.app/",
+        "/Applications/BlockBlock Helper.app/", "/Library/Objective-See/",
+        "/Library/SystemExtensions/", "/Applications/Tailscale.app/",
+        "/Applications/OrbStack.app/",
+    ])
+    protected_label_prefixes: list[str] = field(default_factory=lambda: [
+        "com.apple.", "com.bastion.", "io.osquery.", "com.northpolesec.",
+        "com.objective-see.", "com.tailscale.", "io.tailscale.", "dev.orbstack.",
+        "com.docker.",
+    ])
+
+
+@dataclass
 class BaselineConfig:
     learning_days: int = 14
     # Paths containing any of these markers count as "built locally" and never raise
@@ -91,12 +135,21 @@ class Config:
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     baseline: BaselineConfig = field(default_factory=BaselineConfig)
     edge_api: EdgeApiConfig = field(default_factory=EdgeApiConfig)
+    executor: ExecutorConfig = field(default_factory=ExecutorConfig)
     extra_redaction_patterns: list[str] = field(default_factory=list)
     detection_dedupe_seconds: int = 60
 
     @property
     def db_path(self) -> Path:
         return self.data_dir / "bastion.db"
+
+    @property
+    def executor_db_path(self) -> Path:
+        return self.data_dir / "executor.db"
+
+    @property
+    def vault_dir(self) -> Path:
+        return self.data_dir / "quarantine"
 
     @property
     def reports_dir(self) -> Path:
