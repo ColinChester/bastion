@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ inc.decision.headline }} · Bastion{% endblock %}
+{% block crumb %}incident {{ inc.id }}{% endblock %}
+{% block body %}
+<div class="card">
+  <div class="row">
+    <span class="pill {{ inc.decision.verdict.value }}">{{ inc.decision.verdict.value }}</span>
+    <strong style="font-size:17px">{{ inc.decision.headline }}</strong>
+    <span class="when muted">{{ when }}</span>
+  </div>
+  <p>{{ inc.decision.summary }}</p>
+  <dl>
+    <dt>Confidence</dt><dd>{{ "%.0f"|format(inc.decision.confidence * 100) }}%</dd>
+    <dt>Severity</dt><dd>{{ inc.decision.severity }}</dd>
+    <dt>Rule</dt><dd>{{ inc.title }} ({{ inc.rule_severity }})</dd>
+    <dt>Triaged by</dt><dd>{{ inc.domain|capitalize }}{% if "warden" in inc.models %},
+      reviewed by Warden{% if not inc.decision.agrees_with_agent %} (disagreed){% endif %}
+      {% else %}; closed without Warden review{% endif %}</dd>
+    <dt>Cost</dt><dd>${{ "%.4f"|format(inc.cost_usd) }}
+      ({{ inc.models.values()|unique|join(", ") }})</dd>
+  </dl>
+</div>
+
+<h2>{{ inc.domain|capitalize }}'s finding</h2>
+<div class="card">
+  <p style="margin-top:0"><span class="pill {{ inc.finding.verdict.value }}">
+    {{ inc.finding.verdict.value }}</span>
+    {{ "%.0f"|format(inc.finding.confidence * 100) }}% · {{ inc.finding.summary }}</p>
+  <pre>{{ inc.finding.reasoning }}</pre>
+  {% if inc.finding.attack_techniques %}
+  <p class="muted">ATT&amp;CK: {{ inc.finding.attack_techniques|join(", ") }}</p>
+  {% endif %}
+</div>
+
+{% if inc.finding.proposed_actions %}
+<h2>Proposed actions (not executed)</h2>
+<div class="card"><table>
+  <tr><th>Action</th><th>Target</th><th>Reason</th></tr>
+  {% for a in inc.finding.proposed_actions %}
+  <tr><td><code>{{ a.action }}</code></td><td>{{ a.target }}</td><td>{{ a.reason }}</td></tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+
+<h2>What the agent looked at</h2>
+<div class="card">
+  {% if inc.tool_calls %}
+  <table>
+    <tr><th>Tool</th><th>Arguments</th><th>Result</th></tr>
+    {% for c in inc.tool_calls %}
+    <tr><td><code>{{ c.tool }}</code></td><td><code>{{ c.arguments|tojson }}</code></td>
+      <td>{% if c.ok %}{{ c.result_chars }} chars{% else %}
+        <span class="malicious">failed: {{ c.error }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<span class="muted">No tool calls.</span>{% endif %}
+</div>
+
+<h2>Detection (redacted telemetry)</h2>
+<div class="card"><pre>{{ detection_json }}</pre></div>
+
+{% if inc.errors %}
+<h2>Errors</h2>
+<div class="card">{% for e in inc.errors %}<div>{{ e }}</div>{% endfor %}</div>
+{% endif %}
+{% endblock %}

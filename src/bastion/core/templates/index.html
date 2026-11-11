@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block crumb %}incidents, last {{ days }} days{% endblock %}
+{% block body %}
+<div class="card stats">
+  <div class="stat"><b>{{ counts.get("malicious", 0) + counts.get("suspicious", 0) }}</b>
+    <span class="muted">to review</span></div>
+  <div class="stat"><b>{{ counts.get("benign", 0) }}</b><span class="muted">benign</span></div>
+  <div class="stat"><b>{{ counts.get("inconclusive", 0) }}</b>
+    <span class="muted">inconclusive</span></div>
+  <div class="stat"><b>${{ "%.2f"|format(spend_month) }}</b>
+    <span class="muted">of ${{ "%.0f"|format(cap_month) }} this month</span></div>
+  <div class="stat"><b>{{ core_status }}</b><span class="muted">triage loop</span></div>
+</div>
+<p class="filters">
+  {% for v in ["", "malicious", "suspicious", "inconclusive", "benign"] %}
+  <a href="/?verdict={{ v }}&amp;days={{ days }}" class="{{ 'on' if v == verdict else '' }}">
+    {{ v or "all" }}</a>
+  {% endfor %}
+</p>
+{% for i in incidents %}
+<a class="card" style="display:block;color:inherit" href="/incident/{{ i.id }}">
+  <div class="row">
+    <span class="pill {{ i.verdict }}">{{ i.verdict }}</span>
+    <strong>{{ i.headline }}</strong>
+    <span class="when muted">{{ i.when }}</span>
+  </div>
+  <div class="muted" style="font-size:13px">
+    {{ i.title }} · {{ i.domain }} · {{ "%.0f"|format(i.confidence * 100) }}% ·
+    {{ i.severity }} severity
+  </div>
+</a>
+{% else %}
+<div class="card muted">No incidents in this view yet. Detections appear here once the
+  agents have triaged them.</div>
+{% endfor %}
+{% endblock %}

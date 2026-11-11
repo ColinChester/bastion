@@ -13,3 +13,7 @@ reports/
 .DS_Store
 # local copies of cloud-init with a real Tailscale key
 deploy/vm/*.local.yaml
+
+# Phase 2 secrets
+deploy/.env
+deploy/.edge-token

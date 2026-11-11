@@ -1,0 +1,34 @@
+# The labeled set from the Phase 1 shadow weeks (docs/phase1-review.md).
+# Each label matches detections by exact rule title plus text that must appear in the
+# detection. `expect` is what a correct triage concludes:
+#   threat = suspicious or malicious (the trigger test performs the real technique)
+#   benign = benign
+# The detections themselves stay on the Mac; `bastion-core eval` reads them from bastiond.
+
+# ---- true positives: scripts/test-triggers.sh -------------------------------------
+- {name: trigger-gatekeeper, expect: threat, rule: "Gatekeeper Disabled With spctl", contains: ["build/decoys/spctl"]}
+- {name: trigger-keychain, expect: threat, rule: "Keychain Secrets Read With the security CLI", contains: ["build/decoys/security"]}
+- {name: trigger-password-dialog, expect: threat, rule: "AppleScript Dialog Asking for a Password", contains: ["build/decoys/osascript"]}
+- {name: trigger-add-user, expect: threat, rule: "Local Account Created or Added to the Admin Group", contains: ["build/decoys/sysadminctl"]}
+- {name: trigger-tcc-reset, expect: threat, rule: "Privacy Permission (TCC) Database Tampering", contains: ["build/decoys/tccutil"]}
+- {name: trigger-quarantine, expect: threat, rule: "Quarantine Attribute Removed From a File", contains: ["build/decoys/xattr"]}
+- {name: trigger-stop-security-tool, expect: threat, rule: "Attempt to Stop or Unload a Security Tool", contains: ["build/decoys/launchctl"]}
+- {name: trigger-pipe-to-shell, expect: threat, rule: "Download Piped Into a Shell", contains: ["build/decoys/curl"]}
+- {name: trigger-pipe-to-shell-typed, expect: threat, rule: "Download piped into a shell (interactive)", contains: ["build/decoys/curl"]}
+- {name: trigger-exec-tmp, expect: threat, rule: "Execution From a Temporary or Shared Folder", contains: ["/private/tmp/bastion-test-"]}
+- {name: trigger-exec-hidden, expect: threat, rule: "Binary Executed From a Hidden Folder in the Home Directory", contains: ["/.bastion-test/payload"]}
+- {name: trigger-exec-downloads, expect: threat, rule: "Unsigned or Ad-hoc Signed Binary Run From a Download Folder", contains: ["Downloads/bastion-test-payload"]}
+- {name: trigger-credential-read, expect: threat, rule: "Credential Store Opened by an Unexpected Process", contains: ["id_bastion_test"]}
+- {name: trigger-shell-profile, expect: threat, rule: "Shell Startup File Modified", contains: ["/.zlogin"]}
+- {name: trigger-plist-written, expect: threat, rule: "LaunchAgent or LaunchDaemon Property List Written", contains: ["com.bastiontest.decoy"]}
+- {name: trigger-new-launch-item, expect: threat, rule: "New LaunchAgent, LaunchDaemon or Login Item", contains: ["com.bastiontest.decoy"]}
+
+# ---- false positives found in the shadow weeks ------------------------------------
+- {name: gh-cli-keychain, expect: benign, rule: "Keychain Secrets Read With the security CLI", contains: ["gh:github.com"]}
+- {name: chrome-updater-quarantine, expect: benign, rule: "Quarantine Attribute Removed From a File", contains: ["/Applications/Google Chrome.app"]}
+- {name: firefox-updater-quarantine, expect: benign, rule: "Quarantine Attribute Removed From a File", contains: ["/Applications/Firefox.app"]}
+- {name: safari-import-credentials, expect: benign, rule: "Credential Store Opened by an Unexpected Process", contains: ["com.apple.Safari.BrowserDataImportingService"]}
+- {name: dotnet-compiler-hidden-folder, expect: benign, rule: "Binary Executed From a Hidden Folder in the Home Directory", contains: ["/.nuget/packages/"]}
+- {name: zoom-updater-plist, expect: benign, rule: "LaunchAgent or LaunchDaemon Property List Written", contains: ["us.zoom.updater"]}
+- {name: bootstrap-restart-osquery, expect: benign, rule: "Attempt to Stop or Unload a Security Tool", contains: ["bootout system/io.osquery.agent"]}
+- {name: existing-login-items, expect: benign, rule: "New LaunchAgent, LaunchDaemon or Login Item", contains: ["/Applications/"]}

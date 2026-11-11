@@ -73,7 +73,9 @@ class AnthropicClient:
 
     def complete(self, *, model, system, messages, tools, force_tool=None, max_tokens=1500):
         kwargs: dict = {"model": model, "max_tokens": max_tokens, "system": system,
-                        "messages": messages, "tools": tools}
+                        "messages": messages}
+        if tools:
+            kwargs["tools"] = tools
         if force_tool:
             kwargs["tool_choice"] = {"type": "tool", "name": force_tool}
         try:

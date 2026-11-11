@@ -15,7 +15,8 @@ from bastion import __version__
 from bastion.config import Config, ConfigPermissionError, load_config
 
 # Commands that read bastiond's root-only data folder or config.
-NEEDS_ROOT = {"status", "doctor", "report", "test-push", "detections"}
+NEEDS_ROOT = {"status", "doctor", "report", "test-push", "detections", "enable-edge-api",
+              "backfill-index"}
 
 
 def _need_sudo(cmd: str) -> str:
@@ -134,6 +135,54 @@ def cmd_detections(args, cfg) -> int:
     return 0
 
 
+def cmd_enable_edge_api(args, cfg) -> int:
+    """Turn on the edge API for the Phase 2 orchestrator and write its token to a file.
+
+    Idempotent: an existing token is kept. The token is never printed; it is written to
+    --token-file (owned by the user who ran sudo, mode 600) for deploy/.env.
+    """
+    import secrets
+
+    from bastion.config import DEFAULT_CONFIG_PATH, ENV_CONFIG, set_toml_value
+
+    if os.geteuid() != 0:
+        sys.exit(_need_sudo("enable-edge-api"))
+    path = Path(args.config or os.environ.get(ENV_CONFIG, DEFAULT_CONFIG_PATH))
+    text = path.read_text() if path.exists() else ""
+    token = cfg.edge_api.token if len(cfg.edge_api.token) >= 32 else secrets.token_hex(32)
+    text = set_toml_value(text, "edge_api", "enabled", "true")
+    text = set_toml_value(text, "edge_api", "token", f'"{token}"')
+    if args.quiet_bastiond_pushes:
+        # The orchestrator's digest replaces bastiond's own daily summary.
+        text = set_toml_value(text, "notify", "mode", '"off"')
+    path.write_text(text)
+    path.chmod(0o600)
+    if args.token_file:
+        out = Path(args.token_file)
+        out.write_text(token + "\n")
+        out.chmod(0o600)
+        uid, gid = os.environ.get("SUDO_UID"), os.environ.get("SUDO_GID")
+        if uid and gid:
+            os.chown(out, int(uid), int(gid))
+    print(f"Edge API enabled on {cfg.edge_api.bind}:{cfg.edge_api.port}. "
+          "Restart bastiond to apply.")
+    return 0
+
+
+def cmd_backfill_index(args, cfg) -> int:
+    """Index older events so agents can look up process trees and binary history."""
+    store = _store(cfg, "backfill-index")
+    total = 0
+    while True:
+        n = store.backfill_lookup_columns(max_rows=20_000)
+        total += n
+        if not n:
+            break
+        print(f"  indexed {total:,} events...", flush=True)
+    print(f"Done: {total:,} events indexed.")
+    return 0
+
+
 def cmd_rules(args, cfg) -> int:
     from bastion.detect.sigma import load_rules
 
@@ -188,6 +237,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("detections", help="list detections since a time")
     p.add_argument("--since", type=float, default=0, help="epoch seconds (default: all)")
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("enable-edge-api", help="turn on the local API for the orchestrator")
+    p.add_argument("--token-file", help="write the API token to this file (mode 600)")
+    p.add_argument("--quiet-bastiond-pushes", action="store_true",
+                   help="turn off bastiond's own daily summary (the orchestrator sends one)")
+    sub.add_parser("backfill-index", help="index older events for agent lookups")
     p = sub.add_parser("rules", help="list and validate detection rules")
     p.add_argument("--dir")
     p = sub.add_parser("replay", help="replay a log file through the pipeline")
@@ -209,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": cmd_status, "doctor": cmd_doctor, "posture": cmd_posture,
         "whoowns": cmd_whoowns, "test-push": cmd_test_push, "report": cmd_report,
         "rules": cmd_rules, "replay": cmd_replay, "detections": cmd_detections,
+        "enable-edge-api": cmd_enable_edge_api, "backfill-index": cmd_backfill_index,
     }[args.cmd]
     return handler(args, cfg)
 

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Bastion{% endblock %}</title>
+<style>
+:root { --bg:#f6f7f9; --card:#fff; --text:#15181d; --muted:#5d6672; --line:#dfe3e8;
+        --benign:#1a7f4b; --suspicious:#b25e00; --malicious:#c22b2b; --inconclusive:#5b6470;
+        --accent:#2456d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#101317; --card:#181c22; --text:#e7eaee; --muted:#98a2ae; --line:#2a303a;
+          --benign:#4cc38a; --suspicious:#f0a24a; --malicious:#f26b6b; --inconclusive:#a2abb6;
+          --accent:#7ea2ff; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text);
+       font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+main { max-width: 920px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+h1 { font-size: 20px; margin: 0; } h2 { font-size: 15px; margin: 22px 0 8px; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+.muted { color: var(--muted); } .mode { margin-left:auto; font-size:13px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+        padding:14px 16px; margin-bottom:10px; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
+.stat b { display:block; font-size:22px; }
+.pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px;
+        font-weight:600; border:1px solid currentColor; text-transform:capitalize; }
+.benign { color:var(--benign); } .suspicious { color:var(--suspicious); }
+.malicious { color:var(--malicious); } .inconclusive { color:var(--inconclusive); }
+.row { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.row .when { margin-left:auto; font-size:13px; }
+.filters a { margin-right:12px; } .filters .on { font-weight:700; color:var(--text); }
+pre, code { font:12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px;
+      overflow-x:auto; white-space:pre-wrap; word-break:break-word; margin:6px 0 0; }
+table { border-collapse:collapse; width:100%; font-size:13.5px; }
+td, th { text-align:left; padding:5px 8px 5px 0; border-bottom:1px solid var(--line);
+         vertical-align:top; }
+dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; margin:0; }
+dt { color:var(--muted); } dd { margin:0; word-break:break-word; }
+</style>
+</head>
+<body><main>
+<header>
+  <h1><a href="/" style="color:inherit">Bastion</a></h1>
+  <span class="muted">{% block crumb %}{% endblock %}</span>
+  <span class="mode muted">Observe-only: nothing is blocked or changed</span>
+</header>
+{% block body %}{% endblock %}
+</main></body>
+</html>

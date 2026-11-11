@@ -104,3 +104,26 @@ def test_http_requires_token_and_serves_queries(cfg, seeded):
 def test_api_stays_off_without_a_strong_token(cfg):
     cfg.edge_api.enabled, cfg.edge_api.token = True, "short"
     assert start_edge_api(cfg) is None
+
+
+def test_core_edge_client_over_real_http(cfg, seeded):
+    from bastion.core.edge import EdgeClient, EdgeError
+
+    cfg.edge_api.enabled, cfg.edge_api.port, cfg.edge_api.token = True, 0, TOKEN
+    server = start_edge_api(cfg)
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        client = EdgeClient(url, TOKEN)
+        assert client.healthy()
+        det = client.query("pending", limit=5)[0]
+        tree = client.query("process-tree", pid=300, at_ms=(T0 + 2) * 1000)
+        assert tree["lineage_child_first"][0]["process"]["path"] == "/usr/sbin/spctl"
+        assert client.query("event", event_id=424242) is None
+        assert client.ack(det["detection_id"]) and client.query("pending") == []
+        with pytest.raises(EdgeError):
+            EdgeClient(url, "wrong-token").query("pending")
+        with pytest.raises(EdgeError):
+            client.query("event", event_id="abc")
+    finally:
+        server.shutdown()
+        server.server_close()

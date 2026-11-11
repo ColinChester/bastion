@@ -4,8 +4,16 @@ Bastion is an autonomous security agent system for a single Mac. When it's finis
 orchestrator agent will triage what the sensors see, contain threats on its own, and ask
 for approval on the phone before doing anything destructive.
 
-This repo currently holds **Phases 0–1: the sensor and detection layer.** It runs in
-shadow mode: it observes, normalizes and records, and blocks nothing.
+**Where it is now:** Phases 0–1 (sensors and detections) are complete, and Phase 2
+(the orchestrator and first three agents) is being built. Everything is observe-only: it
+watches, investigates and reports, and blocks nothing.
+
+- **Sensor layer** (`bastiond`, below): records what happens on the Mac and raises
+  detections.
+- **Agent layer** ([docs/phase2.md](docs/phase2.md)): a LangGraph orchestrator (Warden)
+  routes each detection to a domain agent (Sentry for execution, Anchor for persistence,
+  Tide for network). The agent investigates with read-only tools and returns a structured
+  verdict, which you read on an incident page or get as a push.
 
 ```
 osquery (Endpoint Security) ─┐
@@ -63,6 +71,8 @@ Commands that read Bastion's data or config need `sudo`, because that folder is 
 | `sudo bastion test-push` | send a test notification |
 | `sudo bastion detections [--since EPOCH]` | detections since a time (`--json` for scripts) |
 | `./scripts/test-triggers.sh` | fire every detection once with harmless decoys and check it was recorded |
+| `./scripts/bootstrap.sh --update` | reinstall and restart Bastion after a `git pull` |
+| `./scripts/setup-phase2.sh` | set up the agent layer (containers, edge API, pushes) |
 | `bastion rules [--dir rules]` | load and validate the Sigma rules |
 | `bastion replay {osquery,santa,unified_log} FILE` | run recorded logs through the pipeline into a scratch DB |
 
@@ -87,8 +97,8 @@ system commands by a fake runner.
 
 | Phase | Scope |
 | --- | --- |
-| 0–1 ✅ | Sensors, OCSF pipeline, redaction, Sigma rules, posture audit, shadow week |
-| 2 | LangGraph orchestrator and three core agents, self-hosted ntfy, daily digest, tracing, read-only incident page |
+| 0–1 ✅ | Sensors, OCSF pipeline, redaction, Sigma rules, posture audit, shadow week ([review](docs/phase1-review.md)) |
+| 2 🚧 | LangGraph orchestrator and three core agents, self-hosted ntfy, daily digest, tracing, read-only incident page |
 | 3 | Per-domain gateways with Cedar policies, passkey-signed approvals, undo log, first autonomous containment (after 14 days in shadow) |
 | 4 | Move to an Oracle Cloud VM over Tailscale, NATS JetStream, dead-man's switch, remaining agents |
 | 5 | Validation with Atomic Red Team and prompt-injection tests, metrics, demo |

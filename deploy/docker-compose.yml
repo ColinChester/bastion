@@ -1,0 +1,68 @@
+# Bastion Phase 2 stack, on the Mac. Start it with scripts/setup-phase2.sh.
+#
+# Every published port binds to 127.0.0.1. The phone reaches the incident page and ntfy
+# through Tailscale Serve (tailnet only), never the open internet.
+name: bastion
+
+x-core: &core
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  env_file: .env
+  environment:
+    BASTION_EDGE_URL: http://host.docker.internal:8765
+    BASTION_NTFY_URL: http://ntfy:80
+    PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006
+  # host.docker.internal (the Mac itself) is provided by OrbStack and Docker Desktop.
+  volumes:
+    - core-data:/data
+  restart: unless-stopped
+  # The container needs nothing from its own filesystem or the kernel.
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  core:
+    <<: *core
+    command: ["bastion-core", "run"]
+    depends_on: [ntfy, phoenix]
+
+  web:
+    <<: *core
+    command: ["bastion-core", "web"]
+    ports:
+      - "127.0.0.1:8787:8787"
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    command: serve
+    environment:
+      NTFY_BASE_URL: ${NTFY_BASE_URL:-http://localhost:8090}
+      # iOS only delivers instant pushes via Apple's servers, which ntfy reaches through
+      # ntfy.sh. It forwards a "new message" poll request, not the message content.
+      NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_BEHIND_PROXY: "true"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    ports:
+      - "127.0.0.1:8090:80"
+    restart: unless-stopped
+
+  phoenix:
+    # Traces include telemetry from the Mac, so they stay in this local container.
+    image: arizephoenix/phoenix:latest
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data
+    volumes:
+      - phoenix-data:/mnt/data
+    ports:
+      - "127.0.0.1:6006:6006"
+    restart: unless-stopped
+
+volumes:
+  core-data:
+  ntfy-cache:
+  phoenix-data:

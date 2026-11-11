@@ -12,6 +12,8 @@
 #   --skip-tools     don't install/upgrade osquery, Santa or the Objective-See apps
 #   --no-checks      skip the Phase 0 checks at the end
 #   --dry-run        print what would run, change nothing
+#   --update         reinstall Bastion and restart it after a `git pull`; no tool
+#                    installs, no approval prompts, no checks
 
 set -euo pipefail
 
@@ -23,12 +25,14 @@ REPORTS="$REPO/reports"
 SKIP_TOOLS=0
 NO_CHECKS=0
 DRY=0
+UPDATE=0
 
 for arg in "$@"; do
   case "$arg" in
     --skip-tools) SKIP_TOOLS=1 ;;
     --no-checks) NO_CHECKS=1 ;;
     --dry-run) DRY=1 ;;
+    --update) UPDATE=1; SKIP_TOOLS=1; NO_CHECKS=1 ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -162,6 +166,9 @@ run sudo install -m 644 "$REPO/config/launchd/com.bastion.bastiond.plist" \
 load_daemon com.bastion.bastiond /Library/LaunchDaemons/com.bastion.bastiond.plist
 
 # ---- 6. approvals ---------------------------------------------------------------------
+if [[ $UPDATE -eq 1 ]]; then
+  step "Approvals (skipped: --update keeps the ones you already gave)"
+else
 step "Approvals only you can click"
 cat <<EOF
     macOS requires you to approve these yourself. Do them now, in this order:
@@ -188,6 +195,7 @@ if [[ $DRY -eq 0 ]]; then
 fi
 if [[ -t 0 && $DRY -eq 0 ]]; then
   read -r -p "    Press Return when you've done a-d (or Ctrl-C to finish later)... " _
+fi
 fi
 # osqueryd only picks up a new Full Disk Access grant when it restarts. On a first install,
 # also clear its saved query results: they were taken before Full Disk Access, so every

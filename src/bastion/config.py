@@ -129,6 +129,32 @@ def _merge(dc, values: dict):
             setattr(dc, key, value)
 
 
+def set_toml_value(text: str, section: str, key: str, literal: str) -> str:
+    """Set `key = literal` inside `[section]` of TOML text, keeping everything else.
+
+    Appends the key (or the whole section) if missing. `literal` is a TOML literal, e.g.
+    `true`, `8765` or `"quoted"`. Only handles the flat sections Bastion's config uses.
+    """
+    lines = text.splitlines()
+    header = f"[{section}]"
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.strip() == header)
+    except StopIteration:
+        return text.rstrip("\n") + f"\n\n{header}\n{key} = {literal}\n"
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].lstrip().startswith("[")),
+               len(lines))
+    for i in range(start + 1, end):
+        if lines[i].split("=", 1)[0].strip() == key and "=" in lines[i]:
+            lines[i] = f"{key} = {literal}"
+            break
+    else:
+        insert = end
+        while insert > start + 1 and not lines[insert - 1].strip():
+            insert -= 1
+        lines.insert(insert, f"{key} = {literal}")
+    return "\n".join(lines) + "\n"
+
+
 class ConfigPermissionError(PermissionError):
     """The config file exists but this user can't read it (it's root-only by design)."""
 

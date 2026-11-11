@@ -165,6 +165,32 @@ class Store:
             out.append(ev)
         return out
 
+    def backfill_lookup_columns(self, batch: int = 2000, max_rows: int | None = None) -> int:
+        """Fill the lookup columns for events stored before they existed. Resumable."""
+        done = 0
+        last = int(self.get_state("backfill_last_id") or 0)
+        while max_rows is None or done < max_rows:
+            rows = self.db.execute(
+                "SELECT id, body FROM events WHERE id > ? AND pid IS NULL AND ppid IS NULL "
+                "AND proc_path IS NULL AND file_path IS NULL ORDER BY id LIMIT ?",
+                (last, batch)).fetchall()
+            if not rows:
+                break
+            updates = []
+            for event_id, body in rows:
+                ev = _unpack(body)
+                updates.append((_dig(ev, "process.pid"), _dig(ev, "actor.process.pid"),
+                                _dig(ev, "process.file.path"), _dig(ev, "file.path"),
+                                event_id))
+            self.db.execute("BEGIN")
+            self.db.executemany("UPDATE events SET pid = ?, ppid = ?, proc_path = ?, "
+                                "file_path = ? WHERE id = ?", updates)
+            self.db.execute("COMMIT")
+            last = rows[-1][0]
+            self.set_state("backfill_last_id", str(last))
+            done += len(rows)
+        return done
+
     def proc_path_stats(self, path: str, since_ms: int = 0) -> dict:
         row = self.db.execute(
             "SELECT COUNT(*), MIN(time_ms), MAX(time_ms) FROM events "
