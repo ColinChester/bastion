@@ -4,8 +4,12 @@ Holds normalized (already redacted) events for `retention_days`, detections, the
 first-seen baseline, collector checkpoints and small state values. Event bodies are
 zlib-compressed JSON to keep a month of process telemetry small.
 
-The `outbox` column on detections is for Phase 2: findings with published = 0 are
-what bastiond will forward to the orchestrator.
+Detections double as the outbox for the orchestrator: rows with published = 0 haven't
+been triaged yet (`detections_pending`, `ack_detection`).
+
+Events carry a few indexed lookup columns (pid, ppid, proc_path, file_path) so the edge
+API can answer agent questions (process tree, binary history, file activity) without
+scanning compressed bodies. Events stored before those columns existed have NULLs there.
 """
 
 from __future__ import annotations
@@ -69,6 +73,26 @@ CREATE TABLE IF NOT EXISTS state (
 """
 
 
+_EVENT_COLUMNS = {"pid": "INTEGER", "ppid": "INTEGER", "proc_path": "TEXT", "file_path": "TEXT"}
+
+INDEXES = """
+CREATE INDEX IF NOT EXISTS events_pid ON events(pid, time_ms);
+CREATE INDEX IF NOT EXISTS events_ppid ON events(ppid, time_ms);
+CREATE INDEX IF NOT EXISTS events_proc_path ON events(proc_path, time_ms);
+CREATE INDEX IF NOT EXISTS events_file_path ON events(file_path, time_ms);
+CREATE INDEX IF NOT EXISTS detections_published ON detections(published, id);
+"""
+
+
+def _dig(obj: dict, dotted: str):
+    cur = obj
+    for part in dotted.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
+
+
 def _pack(obj: dict) -> bytes:
     return zlib.compress(json.dumps(obj, separators=(",", ":")).encode(), 6)
 
@@ -83,7 +107,9 @@ class Store:
         if str(path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
+        self.db.execute("PRAGMA busy_timeout = 5000")
         self.db.executescript(SCHEMA)
+        self._migrate()
         if str(path) != ":memory:":
             with contextlib.suppress(OSError):
                 self.path.chmod(0o600)
@@ -91,18 +117,60 @@ class Store:
     def close(self) -> None:
         self.db.close()
 
+    def _migrate(self) -> None:
+        have = {row[1] for row in self.db.execute("PRAGMA table_info(events)")}
+        for col, typ in _EVENT_COLUMNS.items():
+            if col not in have:
+                self.db.execute(f"ALTER TABLE events ADD COLUMN {col} {typ}")
+        self.db.executescript(INDEXES)
+
     # ---- events -------------------------------------------------------------------
     def add_event(self, event: dict) -> int:
         cur = self.db.execute(
-            "INSERT INTO events (time_ms, class_uid, source, body) VALUES (?, ?, ?, ?)",
+            "INSERT INTO events (time_ms, class_uid, source, body, pid, ppid, proc_path, "
+            "file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 int(event.get("time", time.time() * 1000)),
                 int(event.get("class_uid", 0)),
                 event.get("metadata", {}).get("log_name", "unknown"),
                 _pack(event),
+                _dig(event, "process.pid"),
+                _dig(event, "actor.process.pid"),
+                _dig(event, "process.file.path"),
+                _dig(event, "file.path"),
             ),
         )
         return int(cur.lastrowid)
+
+    def events_where(self, column: str, value, since_ms: int = 0,
+                     until_ms: int | None = None, limit: int = 50,
+                     class_uid: int | None = None, newest_first: bool = True) -> list[dict]:
+        """Events whose indexed lookup column equals `value`, within a time window."""
+        if column not in _EVENT_COLUMNS:
+            raise ValueError(f"not a lookup column: {column}")
+        q = f"SELECT id, body FROM events WHERE {column} = ? AND time_ms >= ?"
+        args: list = [value, since_ms]
+        if until_ms is not None:
+            q += " AND time_ms <= ?"
+            args.append(until_ms)
+        if class_uid is not None:
+            q += " AND class_uid = ?"
+            args.append(class_uid)
+        q += f" ORDER BY time_ms {'DESC' if newest_first else 'ASC'} LIMIT ?"
+        args.append(max(1, min(int(limit), 500)))
+        out = []
+        for event_id, body in self.db.execute(q, args):
+            ev = _unpack(body)
+            ev["_id"] = event_id
+            out.append(ev)
+        return out
+
+    def proc_path_stats(self, path: str, since_ms: int = 0) -> dict:
+        row = self.db.execute(
+            "SELECT COUNT(*), MIN(time_ms), MAX(time_ms) FROM events "
+            "WHERE proc_path = ? AND class_uid = 1007 AND time_ms >= ?", (path, since_ms),
+        ).fetchone()
+        return {"executions": row[0], "first_ms": row[1], "last_ms": row[2]}
 
     def get_event(self, event_id: int) -> dict | None:
         row = self.db.execute("SELECT body FROM events WHERE id = ?", (event_id,)).fetchone()
@@ -160,6 +228,50 @@ class Store:
             ),
         )
         return int(cur.lastrowid), True
+
+    def _detection_row(self, row) -> dict:
+        det_id, t, rule_id, title, sev, hits, last_ms, event_id, body, published = row
+        return {"id": det_id, "time_ms": t, "rule_id": rule_id, "title": title,
+                "severity": sev, "hits": hits, "last_ms": last_ms, "event_id": event_id,
+                "published": bool(published), "finding": _unpack(body)}
+
+    _DET_COLS = ("id, time_ms, rule_id, title, severity, hits, last_ms, event_id, body, "
+                 "published")
+
+    def get_detection(self, det_id: int) -> dict | None:
+        row = self.db.execute(
+            f"SELECT {self._DET_COLS} FROM detections WHERE id = ?", (det_id,)).fetchone()
+        return self._detection_row(row) if row else None
+
+    def detections_pending(self, since_ms: int = 0, limit: int = 20) -> list[dict]:
+        """Untriaged detections (the orchestrator's outbox), oldest first."""
+        rows = self.db.execute(
+            f"SELECT {self._DET_COLS} FROM detections WHERE published = 0 AND time_ms >= ? "
+            "ORDER BY id LIMIT ?", (since_ms, max(1, min(int(limit), 100))))
+        return [self._detection_row(r) for r in rows]
+
+    def detections_between(self, start_ms: int, end_ms: int, limit: int = 50) -> list[dict]:
+        rows = self.db.execute(
+            f"SELECT {self._DET_COLS} FROM detections WHERE last_ms >= ? AND time_ms <= ? "
+            "ORDER BY time_ms LIMIT ?", (start_ms, end_ms, max(1, min(int(limit), 500))))
+        return [self._detection_row(r) for r in rows]
+
+    def ack_detection(self, det_id: int) -> bool:
+        cur = self.db.execute("UPDATE detections SET published = 1 WHERE id = ?", (det_id,))
+        return cur.rowcount > 0
+
+    def baseline_entry(self, kind: str, key: str) -> dict | None:
+        row = self.db.execute(
+            "SELECT first_ms, last_ms, count FROM baseline WHERE kind = ? AND key = ?",
+            (kind, key)).fetchone()
+        return {"first_ms": row[0], "last_ms": row[1], "count": row[2]} if row else None
+
+    def baseline_search(self, kind: str, contains: str, limit: int = 20) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT key, first_ms, last_ms, count FROM baseline WHERE kind = ? "
+            "AND instr(key, ?) > 0 ORDER BY last_ms DESC LIMIT ?",
+            (kind, contains, max(1, min(int(limit), 100))))
+        return [{"key": k, "first_ms": f, "last_ms": la, "count": c} for k, f, la, c in rows]
 
     def iter_detections(self, since_ms: int = 0) -> Iterator[dict]:
         for row in self.db.execute(

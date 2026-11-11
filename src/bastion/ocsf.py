@@ -149,7 +149,10 @@ def detection_finding(
     for key in ("process", "actor", "file", "dst_endpoint", "src_endpoint", "message"):
         if key in event:
             finding[key] = event[key]
-    persistence = get(event, "unmapped.persistence")
-    if persistence:
-        finding["unmapped"] = {"persistence": persistence}
+    carried = {k: get(event, f"unmapped.{k}") for k in
+               ("persistence", "team_id", "signing_id", "platform_binary",
+                "codesigning_flags", "santa")}
+    carried = {k: v for k, v in carried.items() if v not in (None, "", {})}
+    if carried:
+        finding["unmapped"] = carried
     return finding

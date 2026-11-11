@@ -22,6 +22,7 @@ from bastion.collectors import RawRecord
 from bastion.collectors.sources import osquery_collector, santa_collector, unified_log_collector
 from bastion.config import Config, load_config
 from bastion.detect.engine import INSTALL_KEY, DetectionEngine
+from bastion.edge_api import start_edge_api
 from bastion.normalize import Normalizer
 from bastion.notify import Notifier, daily_summary_text
 from bastion.redact import Redactor
@@ -164,6 +165,7 @@ async def run(cfg: Config) -> None:
         tasks.append(asyncio.create_task(unified_log_collector(cfg, store, queue),
                                          name="unified_log"))
 
+    edge = start_edge_api(cfg)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -181,6 +183,8 @@ async def run(cfg: Config) -> None:
     for t in [stopper, *tasks]:
         t.cancel()
     await asyncio.gather(stopper, *tasks, return_exceptions=True)
+    if edge is not None:
+        edge.shutdown()
     store.close()
     if failed:
         raise SystemExit(1)

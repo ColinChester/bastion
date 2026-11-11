@@ -51,6 +51,15 @@ class NotifyConfig:
 
 
 @dataclass
+class EdgeApiConfig:
+    """Local read-only API the orchestrator uses (Phase 2). Off until a token is set."""
+    enabled: bool = False
+    bind: str = "127.0.0.1"
+    port: int = 8765
+    token: str = ""
+
+
+@dataclass
 class BaselineConfig:
     learning_days: int = 14
     # Paths containing any of these markers count as "built locally" and never raise
@@ -81,6 +90,7 @@ class Config:
     unified_log: UnifiedLogSource = field(default_factory=UnifiedLogSource)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     baseline: BaselineConfig = field(default_factory=BaselineConfig)
+    edge_api: EdgeApiConfig = field(default_factory=EdgeApiConfig)
     extra_redaction_patterns: list[str] = field(default_factory=list)
     detection_dedupe_seconds: int = 60
 

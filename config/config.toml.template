@@ -44,3 +44,11 @@ dev_path_markers = [
   "/git/", "/target/debug/", "/target/release/", "/.build/", "/build/",
   "/node_modules/", "/DerivedData/", "/PycharmProjects/", "/eclipse-workspace/",
 ]
+
+[edge_api]
+# Phase 2: the local read-only API the orchestrator container uses to pull detections and
+# query telemetry. scripts/setup-phase2.sh turns it on and generates the token.
+enabled = false
+bind = "127.0.0.1"
+port = 8765
+token = ""
