@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 30 | 2026-11-11 | Tests | Core backlog test failed in CI only (same-millisecond race) | fixed |
 | 29 | 2026-11-11 | Detection | A launch item that was removed and re-added never alerted again | fixed |
 | 28 | 2026-11-11 | Detection / privacy | Browser updaters cleared quarantine; redaction hid commands but leaked auth headers | fixed |
 | 27 | 2026-11-11 | Storage | Database reached 1 GB in 11 days | fixed |
@@ -40,6 +41,19 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 30. Core backlog test failed in CI only (same-millisecond race)
+
+**Symptom.** `test_old_detections_are_not_triaged_by_default` passed locally and failed
+on GitHub Actions for commit `39484af`.
+
+**Cause.** The test seeds a detection, then starts the worker, which skips detections
+older than its first start. On the faster CI runner both happened in the same
+millisecond, and the cutoff comparison is inclusive.
+
+**Fix.** The test waits 20 ms before starting the worker. Production behavior is
+unchanged: a detection created in the very millisecond the core first starts is triaged,
+which is harmless.
 
 ## 29. A launch item that was removed and re-added never alerted again
 
