@@ -288,3 +288,39 @@ def test_digest_counts_and_health(env):
     assert "Model spend: $" in body and "/usr/sbin" not in body
     title, body = digest_text(CoreStore(":memory:"), None, env["settings"])
     assert title == "Bastion daily: all quiet" and "Could not reach bastiond" in body
+
+
+def test_forced_tool_requests_match_what_each_model_accepts():
+    """Sonnet 5.5 returns 400 for tool_choice "tool" (issues log #31)."""
+    from bastion.core.models import build_request
+
+    tools = [{"name": "get_event"}, {"name": "submit_decision"}]
+    common = {"system": "s", "messages": [], "tools": tools, "max_tokens": 10,
+              "force_tool": "submit_decision"}
+    sonnet = build_request(model="claude-sonnet-5-5", **common)
+    assert sonnet["tool_choice"] == {"type": "auto"}
+    assert [t["name"] for t in sonnet["tools"]] == ["submit_decision"]
+    haiku = build_request(model="claude-haiku-5-5", **common)
+    assert haiku["tool_choice"] == {"type": "tool", "name": "submit_decision"}
+    assert len(haiku["tools"]) == 2
+    plain = build_request(model="claude-sonnet-5-5", **{**common, "force_tool": None})
+    assert "tool_choice" not in plain and len(plain["tools"]) == 2
+
+
+def test_warden_answering_in_text_is_asked_again(env):
+    calls = {"n": 0}
+
+    def script(model, system, messages, tools, force_tool):
+        if force_tool == "submit_decision":
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return ModelReply("I think this is suspicious.", usage=USAGE)
+            return decision_call()
+        return standard_script()(model, system, messages, tools, force_tool)
+
+    det = env["edge"].query("pending")[0]
+    inc = triage(det, settings=env["settings"], model=ScriptedClient(script),
+                 edge=env["edge"], store=env["core"])
+    assert calls["n"] == 2
+    assert inc.decision.headline == "Gatekeeper was switched off"
+    assert inc.errors == ["Warden attempt 1: no submit_decision call"]

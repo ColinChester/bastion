@@ -169,5 +169,23 @@ def test_warden_garbage_falls_back_to_the_analyst(cfg, tmp_path):
     inc = triage(edge.query("pending")[0], settings=Settings(data_dir=tmp_path), edge=edge,
                  store=CoreStore(":memory:"), model=ScriptedClient(script))
     assert inc.decision.verdict == Verdict.SUSPICIOUS and inc.decision.notify
-    assert any("no decision" in e for e in inc.errors)
+    assert any("no submit_decision call" in e for e in inc.errors)
     assert decision_call().tool_calls[0].name == "submit_decision"
+
+
+def test_eval_records_model_errors_instead_of_crashing(cfg, tmp_path):
+    from bastion.core.models import ModelError
+
+    decoy = "/Users/colin/git/bastion/build/decoys/spctl"
+    store, edge = _seed(cfg, cmd=f"{decoy} --master-disable", path=decoy)
+    store.db.execute("UPDATE detections SET time_ms = strftime('%s','now') * 1000 - 5000, "
+                     "last_ms = strftime('%s','now') * 1000 - 5000")
+
+    def broken(*_):
+        raise ModelError("BadRequestError: 400")
+
+    settings = Settings(data_dir=tmp_path)
+    cases, _ = run_eval(settings=settings, edge=edge, labels=load_labels(LABELS), days=2,
+                        model=ScriptedClient(broken))
+    assert [c.grade for c in cases] == ["ERROR"]
+    assert "| ERROR | trigger-gatekeeper |" in report(cases, [], settings)

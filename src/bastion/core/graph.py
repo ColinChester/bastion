@@ -165,22 +165,39 @@ def build_graph(*, settings: Settings, model: ModelClient, edge: Edge, budget: B
                       "analyst": state["domain"], **finding.model_dump(mode="json"),
                       "tools_used": [c.tool for c in state.get("tool_calls", [])]}))
         decision = None
-        try:
-            budget.check()
-            reply = model.complete(model=settings.warden_model, system=WARDEN_SYSTEM,
-                                   messages=[{"role": "user", "content": prompt}],
-                                   tools=[submit_tool("submit_decision", WardenDecision)],
-                                   force_tool="submit_decision", max_tokens=900)
+        messages: list[dict] = [{"role": "user", "content": prompt}]
+        tools = [submit_tool("submit_decision", WardenDecision)]
+        # Some models can't be forced to call a tool, so ask again (once) if it answers in
+        # text or with an invalid decision.
+        for attempt in range(2):
+            try:
+                budget.check()
+                reply = model.complete(model=settings.warden_model, system=WARDEN_SYSTEM,
+                                       messages=messages, tools=tools,
+                                       force_tool="submit_decision", max_tokens=1200)
+            except BudgetExceeded as exc:
+                errors.append(f"Warden skipped: {exc}")
+                break
             budget.charge("warden", reply)
             call = next((c for c in reply.tool_calls if c.name == "submit_decision"), None)
             if call is None:
-                errors.append("Warden returned no decision")
+                problem = "no submit_decision call"
+                nudge = "Call submit_decision now with your decision."
             else:
-                decision = WardenDecision.model_validate(call.input)
-        except BudgetExceeded as exc:
-            errors.append(f"Warden skipped: {exc}")
-        except ValidationError as exc:
-            errors.append(f"Warden decision invalid: {exc.error_count()} error(s)")
+                try:
+                    decision = WardenDecision.model_validate(call.input)
+                    break
+                except ValidationError as exc:
+                    problem = f"invalid decision ({exc.error_count()} error(s))"
+                    nudge = f"That decision was invalid: {exc}. Call submit_decision again."
+            errors.append(f"Warden attempt {attempt + 1}: {problem}")
+            messages = messages + [reply.as_assistant_message()]
+            if call is not None:
+                messages.append({"role": "user", "content": [{
+                    "type": "tool_result", "tool_use_id": call.id, "content": nudge,
+                    "is_error": True}]})
+            else:
+                messages.append({"role": "user", "content": nudge})
         if decision is None:
             decision = fallback_decision(finding, detection,
                                          "(Warden review unavailable; analyst verdict used.)")

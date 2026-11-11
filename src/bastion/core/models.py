@@ -64,6 +64,32 @@ def cost_usd(settings: Settings, model: str, usage: Usage) -> float:
     return total * mult / 1_000_000
 
 
+# Models that reject tool_choice "any"/"tool" with a 400 (Anthropic tool-use docs,
+# checked 2026-11-11). For these, a "forced" call offers only that one tool with
+# tool_choice auto, and callers re-ask if the model still answers in text.
+NO_FORCED_TOOL_PREFIXES = ("claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5",
+                           "claude-mythos-5")
+
+
+def supports_forced_tool(model: str) -> bool:
+    return not model.startswith(NO_FORCED_TOOL_PREFIXES)
+
+
+def build_request(*, model: str, system: str, messages: list[dict], tools: list[dict],
+                  force_tool: str | None, max_tokens: int) -> dict:
+    kwargs: dict = {"model": model, "max_tokens": max_tokens, "system": system,
+                    "messages": messages}
+    if force_tool:
+        if supports_forced_tool(model):
+            kwargs["tool_choice"] = {"type": "tool", "name": force_tool}
+        else:
+            tools = [t for t in tools if t["name"] == force_tool]
+            kwargs["tool_choice"] = {"type": "auto"}
+    if tools:
+        kwargs["tools"] = tools
+    return kwargs
+
+
 class AnthropicClient:
     def __init__(self, api_key: str | None = None):
         import anthropic
@@ -72,12 +98,8 @@ class AnthropicClient:
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=60)
 
     def complete(self, *, model, system, messages, tools, force_tool=None, max_tokens=1500):
-        kwargs: dict = {"model": model, "max_tokens": max_tokens, "system": system,
-                        "messages": messages}
-        if tools:
-            kwargs["tools"] = tools
-        if force_tool:
-            kwargs["tool_choice"] = {"type": "tool", "name": force_tool}
+        kwargs = build_request(model=model, system=system, messages=messages, tools=tools,
+                               force_tool=force_tool, max_tokens=max_tokens)
         try:
             resp = self._client.messages.create(**kwargs)
         except self._anthropic.APIError as exc:

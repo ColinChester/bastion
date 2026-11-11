@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 31 | 2026-11-11 | Agents | Warden review failed: Sonnet 5.5 rejects forced tool calls | fixed |
 | 30 | 2026-11-11 | Tests | Core backlog test failed in CI only (same-millisecond race) | fixed |
 | 29 | 2026-11-11 | Detection | A launch item that was removed and re-added never alerted again | fixed |
 | 28 | 2026-11-11 | Detection / privacy | Browser updaters cleared quarantine; redaction hid commands but leaked auth headers | fixed |
@@ -41,6 +42,27 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 31. Warden review failed: Sonnet 5.5 rejects forced tool calls
+
+**Symptom.** The first real run of `bastion-core eval` crashed in the Warden review step:
+`BadRequestError: 400 … tool_choice: type "tool" and "any" are not supported for this
+model`.
+
+**Cause.** Warden asked Sonnet 5.5 for its decision with `tool_choice: {"type": "tool"}`.
+Anthropic's docs list Sonnet 5.5 (and Opus 5.5, Fable and Mythos 5.x) as models that
+reject forced tool use. Tests didn't catch it because the scripted model accepts any
+request. Separately, one failed call ended the whole evaluation.
+
+**Fix.**
+- `build_request` only forces a tool on models that support it. For the others it offers
+  just that one tool with `tool_choice: auto`.
+- Warden asks once more if the model answers in text or sends an invalid decision.
+- The evaluation records a failed call as `ERROR` for that case and carries on.
+
+Tests: `test_forced_tool_requests_match_what_each_model_accepts`,
+`test_warden_answering_in_text_is_asked_again`,
+`test_eval_records_model_errors_instead_of_crashing`.
 
 ## 30. Core backlog test failed in CI only (same-millisecond race)
 

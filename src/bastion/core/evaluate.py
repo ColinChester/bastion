@@ -24,7 +24,7 @@ import yaml
 from bastion.core.corestore import CoreStore
 from bastion.core.edge import Edge
 from bastion.core.graph import triage
-from bastion.core.models import ModelClient
+from bastion.core.models import ModelClient, ModelError
 from bastion.core.schemas import Incident, Verdict
 from bastion.core.settings import Settings
 
@@ -70,6 +70,7 @@ class Case:
     detection: dict
     incident: Incident | None = None
     grade: str = ""
+    error: str = ""
 
 
 def select_cases(labels: list[Label], detections: list[dict], per_label: int) -> list[Case]:
@@ -97,8 +98,12 @@ def run_eval(*, settings: Settings, model: ModelClient, edge: Edge, labels: list
     cases = select_cases(labels, list(unique.values()), per_label)
     scratch = CoreStore(":memory:", settings.timezone)  # eval spend stays out of the ledger
     for case in cases:
-        case.incident = triage(case.detection, settings=settings, model=model, edge=edge,
-                               store=scratch)
+        try:
+            case.incident = triage(case.detection, settings=settings, model=model, edge=edge,
+                                   store=scratch)
+        except ModelError as exc:  # one failed call shouldn't sink the whole evaluation
+            case.grade, case.error = "ERROR", str(exc)[:200]
+            continue
         case.grade = grade(case.label.expect, case.incident.decision.verdict)
     covered = {c.label.name for c in cases}
     return cases, [lb.name for lb in labels if lb.name not in covered]
@@ -114,12 +119,17 @@ def report(cases: list[Case], uncovered: list[str], settings: Settings) -> str:
         f"**{passed} of {n} correct** · "
         f"{sum(c.grade == 'MISS' for c in cases)} missed threats · "
         f"{sum(c.grade == 'FALSE ALARM' for c in cases)} false alarms · "
-        f"{sum(c.grade == 'UNSURE' for c in cases)} inconclusive · ${cost:.3f} spent", "",
+        f"{sum(c.grade == 'UNSURE' for c in cases)} inconclusive · "
+        f"{sum(c.grade == 'ERROR' for c in cases)} errors · ${cost:.3f} spent", "",
         "| Result | Label | Expected | Verdict | Conf. | Agent | Tools | Summary |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for c in sorted(cases, key=lambda c: (c.grade == "PASS", c.label.name)):
         i = c.incident
+        if i is None:
+            lines.append(f"| ERROR | {c.label.name} | {c.label.expect} | | | | | "
+                         f"{c.error.replace('|', '/')} |")
+            continue
         summary = i.decision.summary.replace("|", "/").replace("\n", " ")[:160]
         lines.append(f"| {c.grade} | {c.label.name} | {c.label.expect} | "
                      f"{i.decision.verdict.value} | {i.decision.confidence:.0%} | {i.domain} "
