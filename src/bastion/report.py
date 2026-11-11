@@ -27,6 +27,14 @@ def _subject_line(f: dict) -> str:
     return " ".join(bits) or "(no subject)"
 
 
+_TEST_MARKERS = ("/build/decoys/", "bastion-test", "bastiontest", "id_bastion_test")
+
+
+def _is_trigger_test(text: str) -> bool:
+    """Detections caused by scripts/test-triggers.sh: real by design, never filtered."""
+    return any(m in text for m in _TEST_MARKERS)
+
+
 def build_report(store: Store, days: int = 7, now_ms: int | None = None) -> str:
     now_ms = now_ms or int(time.time() * 1000)
     since = now_ms - days * 86_400_000
@@ -68,7 +76,10 @@ def build_report(store: Store, days: int = 7, now_ms: int | None = None) -> str:
             if cmd and s not in samples:
                 samples[s] = cmd[:300].replace("`", "'")
         for s, n in subjects.most_common(25):
-            out.append(f"- [ ] benign  [ ] real  — `{s}` ×{n}")
+            if _is_trigger_test(s + samples.get(s, "")):
+                out.append(f"- [ ] benign  [x] real  — `{s}` ×{n} (trigger test)")
+            else:
+                out.append(f"- [ ] benign  [ ] real  — `{s}` ×{n}")
             if s in samples:
                 out.append(f"  - sample: `{samples[s]}`")
         if len(subjects) > 25:

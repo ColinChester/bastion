@@ -33,6 +33,7 @@ detection:
       - '/.swiftpm/'
       - '/.android/'
       - '/.dotnet/'
+      - '/.nuget/packages/'     # .NET NativeAOT compiler (ilc) runs from here
       - '/.cache/'
       - '/.config/'
       - '/.docker/'

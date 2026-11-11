@@ -30,6 +30,7 @@ detection:
       - '/io.osquery.'
       - '/com.northpolesec.'
       - '/com.objective-see.'
+      - '/us.zoom.updater.'      # Zoom's updater rewrites its own agents
   condition: selection and not filter_known
 falsepositives:
   - App installers and updaters (Parallels, Zoom, Google updaters)

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Fire every Bastion detection once, harmlessly, and check each one was recorded.
 #
-# Nothing here changes your system. Process rules are triggered by "decoys": copies of
-# /usr/bin/true named after the real tool (spctl, security, osascript...). The detection
-# sees the command line it watches for, but the decoy does nothing. File rules use
-# throwaway files that are deleted afterwards. The launch agent plist is never loaded.
+# Nothing here changes your system, apart from restarting osquery once. Process rules
+# are triggered by "decoys": copies of /usr/bin/true named after the real tool (spctl,
+# security, osascript...). The detection sees the command line it watches for, but the
+# decoy does nothing. File rules use throwaway files that are deleted afterwards. The
+# launch agent plist is never loaded.
 #
 #   ./scripts/test-triggers.sh            run all triggers, wait, report PASS/MISS
 #   ./scripts/test-triggers.sh --no-wait  fire triggers only (check later with
@@ -76,13 +77,19 @@ make_decoy /usr/bin/true "$DL";            "$DL"
 say "File rules (throwaway files)"
 if [[ ! -d "$HOME/.ssh" ]]; then mkdir -m 700 "$HOME/.ssh"; MADE_SSH=1; fi
 printf 'not a real key\n' > "$CRED"
-sleep 1
-"$D/reader" "$CRED" >/dev/null
 for f in .zlogin .bash_profile .profile .bashrc; do
   if [[ ! -e "$HOME/$f" ]]; then PROFILE="$HOME/$f"; break; fi
 done
+[[ -n "$PROFILE" ]] && : > "$PROFILE"
+# osquery decides which files to watch when it loads its config, so files created after
+# that aren't watched yet (issues log #24). Restart it so the test files are covered,
+# the way a real ~/.zshrc or SSH key that already exists is.
+say "Restarting osquery so it watches the test files (about 20 s)"
+sudo launchctl kickstart -k system/io.osquery.agent
+sleep 20
+"$D/reader" "$CRED" >/dev/null
 if [[ -n "$PROFILE" ]]; then
-  printf '# bastion test\n' > "$PROFILE"
+  printf '# bastion test\n' >> "$PROFILE"
 else
   echo "    skipped shell profile test: all candidate files already exist"
 fi

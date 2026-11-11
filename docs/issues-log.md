@@ -9,6 +9,9 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 26 | 2026-11-11 | Detection | GitHub CLI filter didn't stop the keychain alerts (2,587 hits) | open |
+| 25 | 2026-11-11 | Detection | Shadow-week false positives: Safari import, .NET compiler, Zoom updater | fixed |
+| 24 | 2026-11-11 | Sensors | Files created after osquery starts aren't watched | mitigated |
 | 23 | 2026-11-10 | CI | GitHub Actions blocked by an account billing lock | open |
 | 22 | 2026-11-10 | Process | A failed CI run was reported as passing | fixed |
 | 21 | 2026-11-01 | Detection | Existing login items alerted as new (69 hits) | fixed |
@@ -34,6 +37,61 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 26. GitHub CLI filter didn't stop the keychain alerts (2,587 hits)
+
+**Symptom.** The shadow-week report still showed *Keychain Secrets Read With the
+security CLI* firing 2,587 times on `security find-generic-password -s gh:github.com -wa
+ColinChester`, despite the `filter_gh_cli` added in #20.
+
+**Cause.** Under investigation. The filter needs the parent process to be `gh`. Either
+the parent path was empty (the parent exited before osquery looked it up, and
+Bastion's process cache didn't have it either), or another program reads the token
+this way. Some hits may also predate installing #20, which happened on Nov 11.
+
+**Fix.** Pending: the parent process data from the osquery log.
+
+## 25. Shadow-week false positives: Safari import, .NET compiler, Zoom updater
+
+**Symptom.** The Nov 11 review showed three benign patterns:
+- Safari's built-in browser-import service (`com.apple.Safari.BrowserDataImportingService`)
+  opened Chrome's `Login Data` and Firefox's `logins.json`.
+- The .NET NativeAOT compiler (`ilc`) ran from `~/.nuget/packages/`, a hidden folder,
+  during a local build.
+- Zoom's updater wrote `us.zoom.updater.gui.501.app.terminate.update.plist`.
+
+**Fix.** Narrow filters for each. The Safari filter requires the exact system path
+inside the Safari Cryptex, so a look-alike binary elsewhere still alerts. The report now
+pre-marks trigger-test hits (`build/decoys/`, `bastion-test`) as real, since they're
+the labeled true positives.
+
+Tests: `test_safari_import_service_reading_browser_logins_is_benign`,
+`test_nuget_compiler_in_hidden_folder_is_benign`, `test_zoom_updater_plist_is_benign`,
+`test_report_marks_trigger_test_hits_as_real`.
+
+## 24. Files created after osquery starts aren't watched
+
+**Symptom.** The first trigger test passed 14 of 16. *Credential Store Opened* and
+*Shell Startup File Modified* missed.
+
+**Cause.** osquery resolves its watched-file patterns when it loads its config.
+- The test's `~/.ssh/id_bastion_test` was created afterwards. FSEvents (which watches
+  the folder) logged it being created, but Endpoint Security never reported it being
+  opened, because the file wasn't on the resolved list.
+- `~/.zlogin` didn't exist at all, so nothing watched it.
+
+Files that already exist when osquery starts are covered: the same report has a real
+Endpoint Security open event on Chrome's `Login Data`.
+
+**Fix.**
+- `--config_refresh=600` makes osquery reload its config every 10 minutes, which should
+  pick up files created since. This needs confirming on the Mac.
+- The trigger test creates its files, restarts osquery, then reads and writes them, so
+  it tests the rules rather than this timing.
+
+**Remaining gap.** A brand-new shell profile, or a new key that's read within 10 minutes
+of being created, can still be missed. Real attacks usually append to an existing
+`~/.zshrc` or read existing keys, which are covered.
 
 ## 23. GitHub Actions blocked by an account billing lock
 

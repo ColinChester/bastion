@@ -11,6 +11,7 @@
 --disable_endpointsecurity_fim=false
 --es_fim_enable_open_events=true
 --enable_file_events=true
+--config_refresh=600
 --events_expiry=3600
 --events_max=50000
 --schedule_splay_percent=10

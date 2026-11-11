@@ -234,3 +234,47 @@ def test_gh_cli_keychain_read_is_filtered():
         platform=1, parent_path="/private/tmp/stealer")))
     assert not rule.matches(gh)
     assert rule.matches(other)
+
+
+# ---- shadow-week review (Nov 11) ------------------------------------------------------
+
+
+def _rule(title_prefix):
+    rules, _ = load_rules(cli.Config().resolved_rules_dir())
+    return next(r for r in rules if r.title.startswith(title_prefix))
+
+
+def test_safari_import_service_reading_browser_logins_is_benign():
+    svc = ("/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/"
+           "XPCServices/com.apple.Safari.BrowserDataImportingService.xpc/Contents/MacOS/"
+           "com.apple.Safari.BrowserDataImportingService")
+    target = "/Users/colin/Library/Application Support/Google/Chrome/Default/Login Data"
+    rule = _rule("Credential Store Opened")
+    assert not rule.matches(_file_open(target, svc))
+    # a look-alike name outside the system volume is still flagged
+    assert rule.matches(_file_open(target, "/tmp/com.apple.Safari.BrowserDataImportingService"))
+
+
+def test_nuget_compiler_in_hidden_folder_is_benign():
+    rule = _rule("Binary Executed From a Hidden Folder")
+    ilc = ("/Users/colin/.nuget/packages/runtime.osx-arm64.microsoft.dotnet.ilcompiler/"
+           "10.0.14/tools/ilc")
+    assert not rule.matches(norm(oq("process_events", exec_cols(ilc, f"{ilc} @x.rsp"))))
+    assert rule.matches(norm(oq("process_events", exec_cols("/Users/colin/.hidden/x"))))
+
+
+def test_zoom_updater_plist_is_benign():
+    rule = _rule("LaunchAgent or LaunchDaemon Property List Written")
+    zoom = "/Users/colin/Library/LaunchAgents/us.zoom.updater.gui.501.app.terminate.update.plist"
+    ev = norm(oq("fs_events", {"target_path": zoom, "action": "CREATED"}))
+    assert not rule.matches(ev)
+
+
+def test_report_marks_trigger_test_hits_as_real(cfg, store):
+    from bastion.report import build_report
+
+    pipe = Pipeline(cfg, store)
+    d = "/Users/colin/git/bastion/build/decoys"
+    pipe.handle(RawRecord("osquery", oq("process_events", exec_cols(
+        f"{d}/spctl", f"{d}/spctl --master-disable", flags="ADHOC"))))
+    assert "[x] real" in build_report(store) and "(trigger test)" in build_report(store)
