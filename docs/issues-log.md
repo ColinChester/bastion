@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 37 | 2026-11-11 | Console | Passkey enrollment on iPhone failed with "Cancelled" | fixed |
 | 36 | 2026-11-11 | Install | Phase 3 setup script would have run a command from its closing message | fixed |
 | 35 | 2026-11-11 | Agents | The worker was started without the action gateway, so nothing would be proposed | fixed |
 | 34 | 2026-11-11 | Executor | One event with two detections contained the same target twice | fixed |
@@ -47,6 +48,21 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 37. Passkey enrollment on iPhone failed with "Cancelled"
+
+**Symptom.** The Mac's passkey enrolled fine; on the iPhone, Create passkey showed
+"Cancelled." immediately, without a Face ID prompt.
+
+**Cause.** Safari only opens the passkey sheet when the WebAuthn call starts directly
+from a tap. The console first fetched the options from the Mac, then called WebAuthn,
+which loses the tap; Safari refuses with `NotAllowedError`, which the page showed as
+"Cancelled". Approve and Undo had the same pattern. Headless Chromium, used for the
+browser test, doesn't enforce this, so the test passed.
+
+**Fix.** Every passkey step now takes two taps: the first fetches the options, the
+second calls WebAuthn with nothing before it. Error messages now distinguish a blocked
+prompt, an already-registered device and a wrong address.
 
 ## 36. Phase 3 setup script would have run a command from its closing message
 
