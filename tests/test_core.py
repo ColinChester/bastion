@@ -6,6 +6,8 @@ queries in-process, so these tests exercise the real loop without network access
 
 from __future__ import annotations
 
+import time
+
 import httpx
 import pytest
 from conftest import exec_cols, oq
@@ -129,6 +131,7 @@ def test_confident_benign_is_closed_without_the_warden_model(env):
 
 
 def test_old_detections_are_not_triaged_by_default(env):
+    time.sleep(0.02)  # the seeded detection must be strictly older than the first start
     w, model = worker(env, standard_script())
     assert w.run_once() == 0 and model.calls == []
 
