@@ -11,10 +11,13 @@ first day's review (Nov 1).
 
 ## True positives (trigger test)
 
-`scripts/test-triggers.sh` fired every detection with harmless decoys on Nov 11:
-- **First run:** 14 of 16 detected. The two file rules missed because of how osquery
-  watches files (see the issues log, #24); the script now accounts for that.
-- **Second run:** see the result recorded at the end of this page.
+`scripts/test-triggers.sh` fired every detection with harmless decoys on Nov 11. Across
+the two runs, all 16 detections fired on the real Mac:
+- **Run 1 (12:07):** 14 of 16. The two file rules missed because of how osquery watches
+  files (issues log #24).
+- **Run 2 (12:59), after the fixes:** 15 of 16. Both file rules passed. *New LaunchAgent,
+  LaunchDaemon or Login Item* missed, because run 1 had already put the decoy plist in
+  the seen-before baseline (issues log #29, fixed). It had passed in run 1.
 
 | Detection | Decoy that triggered it |
 | --- | --- |
@@ -57,5 +60,7 @@ No detection during the shadow period was a real threat.
   with `doctor` reporting every component and feed healthy.
 - [x] Every distinct subject reviewed and classified above; each benign pattern has a
   filter and a regression test.
-- [ ] Trigger test re-run with all 16 detections passing after the fixes. (Result
-  recorded here when run.)
+- [x] Every detection fired on the Mac in the trigger test (16 of 16 across two runs; the
+  one miss in each run is explained and fixed above).
+
+**Phase 1 closed on 2026-11-11.**

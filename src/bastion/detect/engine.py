@@ -34,6 +34,9 @@ log = logging.getLogger(__name__)
 
 INSTALL_KEY = "install_ms"
 
+REMOVED_KIND = "persistence_removed"
+REAPPEAR_MS = 10 * 60 * 1000
+
 FETCH_PIPE_RULE = "bastion-fetch-piped-to-shell"
 FETCH_PIPE_WINDOW_MS = 3_000
 _FETCHERS = {"curl", "wget"}
@@ -130,12 +133,26 @@ class DetectionEngine:
         Sigma rule ignores items marked seen_before, so only genuinely new ones alert.
         """
         p = ocsf.get(event, "unmapped.persistence")
-        if not isinstance(p, dict) or event.get("activity_id") != ocsf.FILE_CREATE:
+        if not isinstance(p, dict):
             return
         key = "|".join([p.get("type", ""), ocsf.get(event, "file.path") or "",
                         p.get("label", "")])
         now = int(event.get("time") or time.time() * 1000)
-        p["seen_before"] = not self.store.baseline_touch("persistence", key, now)
+        if event.get("activity_id") == ocsf.FILE_DELETE:
+            self.store.baseline_touch(REMOVED_KIND, key, now)
+            return
+        if event.get("activity_id") != ocsf.FILE_CREATE:
+            return
+        seen = not self.store.baseline_touch("persistence", key, now)
+        removed = self.store.baseline_last(REMOVED_KIND, key)
+        if removed is not None:
+            self.store.baseline_forget(REMOVED_KIND, key)
+            # An item that was gone for a while and comes back is new again (an attacker
+            # re-installing it, or the user reinstalling an app). A remove and re-add
+            # moments apart is osquery flicker and stays quiet.
+            if now - removed >= REAPPEAR_MS:
+                seen = False
+        p["seen_before"] = seen
 
     # ---- correlation --------------------------------------------------------------
     def _fetch_piped_to_shell(self, event: dict, event_id: int | None) -> list[Hit]:

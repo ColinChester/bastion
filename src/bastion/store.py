@@ -195,6 +195,14 @@ class Store:
         )
         return True
 
+    def baseline_last(self, kind: str, key: str) -> int | None:
+        row = self.db.execute("SELECT last_ms FROM baseline WHERE kind = ? AND key = ?",
+                              (kind, key)).fetchone()
+        return row[0] if row else None
+
+    def baseline_forget(self, kind: str, key: str) -> None:
+        self.db.execute("DELETE FROM baseline WHERE kind = ? AND key = ?", (kind, key))
+
     def baseline_size(self) -> dict[str, int]:
         return dict(self.db.execute("SELECT kind, COUNT(*) FROM baseline GROUP BY kind"))
 

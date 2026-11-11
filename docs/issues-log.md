@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 29 | 2026-11-11 | Detection | A launch item that was removed and re-added never alerted again | fixed |
 | 28 | 2026-11-11 | Detection / privacy | Browser updaters cleared quarantine; redaction hid commands but leaked auth headers | fixed |
 | 27 | 2026-11-11 | Storage | Database reached 1 GB in 11 days | fixed |
 | 26 | 2026-11-11 | Detection | GitHub CLI filter didn't stop the keychain alerts (2,587 hits) | fixed |
@@ -39,6 +40,21 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 29. A launch item that was removed and re-added never alerted again
+
+**Symptom.** The second trigger-test run passed 15 of 16. *New LaunchAgent, LaunchDaemon
+or Login Item* missed, though it had passed in the first run.
+
+**Cause.** The seen-before baseline from #21 remembered the decoy plist from run 1
+forever. That's also a real gap: an attacker (or reinstall) re-adding a previously
+removed item would stay silent.
+
+**Fix.** Removals are recorded. An item that was gone for 10 minutes or more and comes
+back counts as new again; a remove and re-add moments apart is osquery flicker and
+stays quiet.
+
+Test: `test_launch_item_removed_then_readded_later_alerts_again`.
 
 ## 28. Browser updaters cleared quarantine; redaction hid commands but leaked auth headers
 

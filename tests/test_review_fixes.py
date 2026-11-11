@@ -317,3 +317,23 @@ def test_browser_updaters_clearing_quarantine_are_benign():
     assert not rule.matches(chrome)
     assert not rule.matches(firefox)
     assert rule.matches(by_hand)
+
+
+def test_launch_item_removed_then_readded_later_alerts_again(cfg, store):
+    """Second trigger-test run missed the persistence rule: the decoy plist was already in
+    the seen-before baseline from the first run (issues log #29)."""
+    pipe = Pipeline(cfg, store)
+    path, label = "/Users/colin/Library/LaunchAgents/com.bastiontest.decoy.plist", "x.decoy"
+
+    def item(action, t):
+        rec = oq("launchd", {"path": path, "label": label, "program": "/x"}, counter=5)
+        rec["action"], rec["unixTime"] = action, t
+        return RawRecord("osquery", rec)
+
+    pipe.handle(item("added", 1_794_000_000))
+    pipe.handle(item("removed", 1_794_000_400))
+    pipe.handle(item("added", 1_794_000_401))      # flicker: quiet
+    assert sum(d["hits"] for d in store.iter_detections()) == 1
+    pipe.handle(item("removed", 1_794_000_500))
+    pipe.handle(item("added", 1_794_003_000))      # back 40 min later: new again
+    assert sum(d["hits"] for d in store.iter_detections()) == 2
