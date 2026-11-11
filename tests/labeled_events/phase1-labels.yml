@@ -23,6 +23,10 @@
 - {name: trigger-plist-written, expect: threat, rule: "LaunchAgent or LaunchDaemon Property List Written", contains: ["com.bastiontest.decoy"]}
 - {name: trigger-new-launch-item, expect: threat, rule: "New LaunchAgent, LaunchDaemon or Login Item", contains: ["com.bastiontest.decoy"]}
 
+# Relabeled Nov 11: stopping osquery is worth a push even when it was the setup script.
+# Nothing in the telemetry proves who ran it, and an attacker would do the same thing.
+- {name: bootstrap-restart-osquery, expect: threat, rule: "Attempt to Stop or Unload a Security Tool", contains: ["bootout system/io.osquery.agent"]}
+
 # ---- false positives found in the shadow weeks ------------------------------------
 - {name: gh-cli-keychain, expect: benign, rule: "Keychain Secrets Read With the security CLI", contains: ["gh:github.com"]}
 - {name: chrome-updater-quarantine, expect: benign, rule: "Quarantine Attribute Removed From a File", contains: ["/Applications/Google Chrome.app"]}
@@ -30,5 +34,4 @@
 - {name: safari-import-credentials, expect: benign, rule: "Credential Store Opened by an Unexpected Process", contains: ["com.apple.Safari.BrowserDataImportingService"]}
 - {name: dotnet-compiler-hidden-folder, expect: benign, rule: "Binary Executed From a Hidden Folder in the Home Directory", contains: ["/.nuget/packages/"]}
 - {name: zoom-updater-plist, expect: benign, rule: "LaunchAgent or LaunchDaemon Property List Written", contains: ["us.zoom.updater"]}
-- {name: bootstrap-restart-osquery, expect: benign, rule: "Attempt to Stop or Unload a Security Tool", contains: ["bootout system/io.osquery.agent"]}
 - {name: existing-login-items, expect: benign, rule: "New LaunchAgent, LaunchDaemon or Login Item", contains: ["/Applications/"]}

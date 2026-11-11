@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 32 | 2026-11-11 | Agents | First evaluation: agents called 28 of the trigger tests benign | fixed (pending re-run) |
 | 31 | 2026-11-11 | Agents | Warden review failed: Sonnet 5.5 rejects forced tool calls | fixed |
 | 30 | 2026-11-11 | Tests | Core backlog test failed in CI only (same-millisecond race) | fixed |
 | 29 | 2026-11-11 | Detection | A launch item that was removed and re-added never alerted again | fixed |
@@ -42,6 +43,32 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 32. First evaluation: agents called 28 of the trigger tests benign
+
+**Symptom.** The first real `bastion-core eval` scored 14 of 46 correct: 28 missed
+threats, 0 false alarms, 4 inconclusive, $0.60 spent. Every miss was a trigger-test
+detection called benign, with reasoning like "a stand-in binary in Bastion's repo,
+launched by the test-triggers script from your own terminal". All benign cases (GitHub
+CLI, Safari import, updaters) were called correctly.
+
+**Cause.** The agents explained the behavior by who ran it and what it was called, even
+though the prompt said to judge behavior, not names. That reasoning is a real bypass:
+"launched from the user's terminal" is exactly how pasted-command attacks run, and an
+attacker can name a payload anything. Prompt rules alone weren't enough for Haiku 5.5.
+
+**Fix.**
+- Findings now carry `benign_basis`. Only `os_component`, `signed_vendor_software` or
+  `developer_toolchain` (what the software is) can support a benign verdict; a benign
+  verdict resting on `user_initiated`, `security_test` or anything else is turned into
+  `suspicious` in code, at the rule's severity.
+- Prompts call out the pasted-command pattern, and treat binaries named after system
+  tools but not the genuine Apple ones as masquerading (T1036).
+- `bootstrap-restart-osquery` relabeled from benign to threat: stopping osquery is worth
+  flagging when nothing proves who did it.
+
+Tests: `test_benign_needs_a_basis_that_names_what_the_software_is`,
+`test_confident_benign_test_explanation_still_flags`. Awaiting a re-run on the Mac.
 
 ## 31. Warden review failed: Sonnet 5.5 rejects forced tool calls
 

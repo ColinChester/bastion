@@ -121,7 +121,8 @@ def test_detection_becomes_a_structured_incident(env):
 
 def test_confident_benign_is_closed_without_the_warden_model(env):
     start_at_zero(env)
-    w, model = worker(env, standard_script(agent_final=finding_call("benign", 0.9)))
+    w, model = worker(env, standard_script(agent_final=finding_call(
+        "benign", 0.9, benign_basis="os_component")))
     w.run_once()
     inc = env["core"].get_incident(env["core"].list_incidents()[0]["id"])
     assert inc.decision.verdict == Verdict.BENIGN and not inc.decision.notify
@@ -230,8 +231,9 @@ def test_actions_outside_the_agents_domain_are_dropped(env):
     assert [a.action for a in inc.finding.proposed_actions] == ["kill_process"]
 
 
-def _finding(verdict):
-    return AgentFinding(verdict=verdict, confidence=0.9, summary="s", reasoning="r")
+def _finding(verdict, basis=None):
+    return AgentFinding(verdict=verdict, confidence=0.9, summary="s", reasoning="r",
+                        benign_basis=basis)
 
 
 def _decision(verdict, **kw):
@@ -249,8 +251,38 @@ def test_policy_guardrails_override_the_models():
     d = enforce_policy(_decision("malicious"), _finding("malicious"), det)
     assert d.notify and d.severity == "high"
     # benign never notifies, even if the model asked to
-    d = enforce_policy(_decision("benign", notify=True), _finding("benign"), det)
-    assert not d.notify
+    d = enforce_policy(_decision("benign", notify=True), _finding("benign", "os_component"),
+                       det)
+    assert d.verdict == Verdict.BENIGN and not d.notify
+
+
+def test_benign_needs_a_basis_that_names_what_the_software_is():
+    """First real eval: agents waved through trigger tests as 'the user ran a test'."""
+    det = {"title": "Gatekeeper Disabled With spctl", "severity": "high"}
+    for basis in ("user_initiated", "security_test", "other", None):
+        d = enforce_policy(_decision("benign"), _finding("benign", basis), det)
+        assert d.verdict == Verdict.SUSPICIOUS and d.severity == "high" and d.notify, basis
+        assert d.summary.startswith("Flagged by policy")
+    for basis in ("os_component", "signed_vendor_software", "developer_toolchain"):
+        d = enforce_policy(_decision("benign"), _finding("benign", basis), det)
+        assert d.verdict == Verdict.BENIGN, basis
+    # Warden's own basis counts too
+    d = enforce_policy(_decision("benign", benign_basis="developer_toolchain"),
+                       _finding("suspicious"), det)
+    assert d.verdict == Verdict.BENIGN
+    # medium-severity rules are flagged for the digest, not pushed
+    d = enforce_policy(_decision("benign"), _finding("benign", "user_initiated"),
+                       {"title": "x", "severity": "medium"})
+    assert d.verdict == Verdict.SUSPICIOUS and d.notify
+
+
+def test_confident_benign_test_explanation_still_flags(env):
+    start_at_zero(env)
+    w, _ = worker(env, standard_script(agent_final=finding_call(
+        "benign", 0.95, benign_basis="security_test")))
+    w.run_once()
+    inc = env["core"].get_incident(env["core"].list_incidents()[0]["id"])
+    assert inc.decision.verdict == Verdict.SUSPICIOUS and inc.decision.notify
 
 
 def test_headline_never_carries_paths():

@@ -96,7 +96,8 @@ def test_eval_runs_without_acking_saving_or_spending_the_ledger(cfg, tmp_path):
     # a model that waves it through is graded as a missed threat
     cases, _ = run_eval(settings=settings, edge=edge, labels=labels, days=2,
                         model=ScriptedClient(standard_script(
-                            agent_final=finding_call("benign", 0.95))))
+                            agent_final=finding_call("benign", 0.95,
+                                                     benign_basis="os_component"))))
     assert cases[0].grade == "MISS"
 
 

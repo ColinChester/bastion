@@ -25,6 +25,27 @@ ACTIONS: dict[str, tuple[str, ...]] = {
 ALL_ACTIONS = tuple(a for acts in ACTIONS.values() for a in acts)
 
 
+# Why something is benign. Only the first three explain behavior by WHAT the software is;
+# the rest describe who started it or what it is called, which an attacker can arrange
+# (a pasted "fix" command runs from the user's own terminal, and a payload can be named
+# "test"). A benign verdict resting on any other basis is turned into "suspicious" in code.
+BenignBasis = Literal[
+    "os_component",            # part of macOS, Apple platform binary doing its normal job
+    "signed_vendor_software",  # a known vendor's signed app/updater doing its documented job
+    "developer_toolchain",     # the user's compilers, package managers, CLIs doing their job
+    "user_initiated",          # the user ran it themselves (not sufficient on its own)
+    "security_test",           # looks like a test or simulation (not sufficient)
+    "other",
+]
+TRUSTED_BENIGN_BASES = frozenset({"os_component", "signed_vendor_software",
+                                  "developer_toolchain"})
+
+_BASIS_HELP = ("Required when verdict is benign: what makes it legitimate. os_component, "
+               "signed_vendor_software or developer_toolchain describe what the software IS. "
+               "user_initiated and security_test do not make a technique safe: commands "
+               "pasted by the user and payloads named 'test' are how real attacks look.")
+
+
 class ProposedAction(BaseModel):
     action: str = Field(description="One of the actions available to this agent.")
     target: str = Field(max_length=400, description="What it applies to (pid, path, label…).")
@@ -44,6 +65,7 @@ class AgentFinding(BaseModel):
     attack_techniques: list[str] = Field(default_factory=list, max_length=8,
                                          description="MITRE ATT&CK IDs, e.g. T1553.001.")
     proposed_actions: list[ProposedAction] = Field(default_factory=list, max_length=4)
+    benign_basis: BenignBasis | None = Field(default=None, description=_BASIS_HELP)
 
     @field_validator("attack_techniques")
     @classmethod
@@ -67,6 +89,7 @@ class WardenDecision(BaseModel):
     notify: bool = Field(description="True if the user should be told now rather than in "
                          "the daily digest.")
     agrees_with_agent: bool = True
+    benign_basis: BenignBasis | None = Field(default=None, description=_BASIS_HELP)
 
 
 class ToolCallRecord(BaseModel):
