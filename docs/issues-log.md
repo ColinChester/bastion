@@ -9,7 +9,8 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
-| 32 | 2026-11-11 | Agents | First evaluation: agents called 28 of the trigger tests benign | fixed (pending re-run) |
+| 33 | 2026-11-11 | Detection | Merged file detections could keep the copy without the writing process | fixed |
+| 32 | 2026-11-11 | Agents | First evaluation: agents called 28 of the trigger tests benign | fixed |
 | 31 | 2026-11-11 | Agents | Warden review failed: Sonnet 5.5 rejects forced tool calls | fixed |
 | 30 | 2026-11-11 | Tests | Core backlog test failed in CI only (same-millisecond race) | fixed |
 | 29 | 2026-11-11 | Detection | A launch item that was removed and re-added never alerted again | fixed |
@@ -44,6 +45,20 @@ Status is one of: fixed, mitigated, documented, open.
 
 ---
 
+## 33. Merged file detections could keep the copy without the writing process
+
+**Symptom.** In the second evaluation, the Zoom updater's plist write was the one
+inconclusive case: "nothing shows which process wrote it".
+
+**Cause.** The same write arrives from FSEvents (no process) and Endpoint Security (with
+the process), and the two merge into one detection (#12). The stored finding was
+whichever came first, here the FSEvents copy.
+
+**Fix.** When a merge brings in a copy that names the writing process and the stored one
+doesn't, the stored finding is replaced with it.
+
+Test: `test_merged_file_detection_keeps_the_copy_that_names_the_writer`.
+
 ## 32. First evaluation: agents called 28 of the trigger tests benign
 
 **Symptom.** The first real `bastion-core eval` scored 14 of 46 correct: 28 missed
@@ -68,7 +83,8 @@ attacker can name a payload anything. Prompt rules alone weren't enough for Haik
   flagging when nothing proves who did it.
 
 Tests: `test_benign_needs_a_basis_that_names_what_the_software_is`,
-`test_confident_benign_test_explanation_still_flags`. Awaiting a re-run on the Mac.
+`test_confident_benign_test_explanation_still_flags`. Re-run on the Mac: 45 of 46
+correct, 0 missed threats, 0 false alarms ([phase2-eval.md](phase2-eval.md)).
 
 ## 31. Warden review failed: Sonnet 5.5 rejects forced tool calls
 

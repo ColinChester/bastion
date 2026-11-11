@@ -94,4 +94,5 @@ bc exec core bastion-core eval
 ```
 
 The report lists each case as PASS, MISS (threat called benign), FALSE ALARM or UNSURE.
-Results go in `docs/phase2-eval.md`, and prompts are tuned until the gate is met.
+Results are recorded in [phase2-eval.md](phase2-eval.md). The gate was met on Nov 11
+(45 of 46 correct, no missed threats or false alarms).

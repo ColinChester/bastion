@@ -4,8 +4,8 @@ Bastion is an autonomous security agent system for a single Mac. When it's finis
 orchestrator agent will triage what the sensors see, contain threats on its own, and ask
 for approval on the phone before doing anything destructive.
 
-**Where it is now:** Phases 0–1 (sensors and detections) are complete, and Phase 2
-(the orchestrator and first three agents) is being built. Everything is observe-only: it
+**Where it is now:** Phases 0–2 are complete: sensors and detections, plus the
+orchestrator and first three agents ([evaluation](docs/phase2-eval.md): 45 of 46 correct). Everything is observe-only: it
 watches, investigates and reports, and blocks nothing.
 
 - **Sensor layer** (`bastiond`, below): records what happens on the Mac and raises
@@ -98,7 +98,7 @@ system commands by a fake runner.
 | Phase | Scope |
 | --- | --- |
 | 0–1 ✅ | Sensors, OCSF pipeline, redaction, Sigma rules, posture audit, shadow week ([review](docs/phase1-review.md)) |
-| 2 🚧 | LangGraph orchestrator and three core agents, self-hosted ntfy, daily digest, tracing, read-only incident page |
+| 2 ✅ | LangGraph orchestrator and three core agents, self-hosted ntfy, daily digest, tracing, read-only incident page |
 | 3 | Per-domain gateways with Cedar policies, passkey-signed approvals, undo log, first autonomous containment (after 14 days in shadow) |
 | 4 | Move to an Oracle Cloud VM over Tailscale, NATS JetStream, dead-man's switch, remaining agents |
 | 5 | Validation with Atomic Red Team and prompt-injection tests, metrics, demo |

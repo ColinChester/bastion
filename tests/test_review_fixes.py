@@ -337,3 +337,17 @@ def test_launch_item_removed_then_readded_later_alerts_again(cfg, store):
     pipe.handle(item("removed", 1_794_000_500))
     pipe.handle(item("added", 1_794_003_000))      # back 40 min later: new again
     assert sum(d["hits"] for d in store.iter_detections()) == 2
+
+
+def test_merged_file_detection_keeps_the_copy_that_names_the_writer(cfg, store):
+    """Eval UNSURE on the Zoom plist: the stored finding came from FSEvents, no writer."""
+    pipe = Pipeline(cfg, store)
+    target = "/Users/colin/Library/LaunchAgents/com.evil.agent.plist"
+    pipe.handle(RawRecord("osquery", oq("fs_events", {"target_path": target,
+                                                      "action": "CREATED"})))
+    pipe.handle(RawRecord("osquery", oq("file_events", {
+        "pid": "7", "path": "/usr/bin/python3", "filename": target, "dest_filename": "",
+        "event_type": "create", "time": "1793480000"})))
+    det = next(store.iter_detections())
+    assert det["hits"] == 2
+    assert det["finding"]["actor"]["process"]["file"]["path"] == "/usr/bin/python3"

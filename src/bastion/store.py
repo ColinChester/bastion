@@ -229,7 +229,7 @@ class Store:
         """
         now = int(finding.get("time", time.time() * 1000))
         row = self.db.execute(
-            "SELECT id FROM detections WHERE dedupe_key = ? AND last_ms >= ? "
+            "SELECT id, body FROM detections WHERE dedupe_key = ? AND last_ms >= ? "
             "ORDER BY id DESC LIMIT 1",
             (dedupe_key, now - window_ms),
         ).fetchone()
@@ -237,6 +237,13 @@ class Store:
             self.db.execute(
                 "UPDATE detections SET hits = hits + 1, last_ms = ? WHERE id = ?", (now, row[0])
             )
+            # The same file write arrives from FSEvents (no process) and Endpoint Security
+            # (with the writing process). Keep whichever copy says who did it.
+            stored = _unpack(row[1])
+            if not _dig(stored, "actor.process.file.path") and \
+                    _dig(finding, "actor.process.file.path"):
+                self.db.execute("UPDATE detections SET body = ?, event_id = ? WHERE id = ?",
+                                (_pack(finding), event_id, row[0]))
             return int(row[0]), False
         info = finding["finding_info"]
         cur = self.db.execute(
