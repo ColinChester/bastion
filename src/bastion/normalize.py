@@ -260,6 +260,9 @@ class Normalizer:
                 "cert_cn": f.get("cert_cn", ""),
             },
         }
+        # Santa logs each exec within a second, osquery only every 10 s. Caching Santa's
+        # execs lets osquery's later copy of a child resolve a parent that already exited.
+        self.procs.put(pid, f.get("path"), f.get("args"))
         return ev
 
     def _santa_json(self, d: dict) -> list[dict]:

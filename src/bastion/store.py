@@ -224,9 +224,15 @@ class Store:
         )
 
     # ---- maintenance --------------------------------------------------------------
-    def purge(self, retention_days: int, now_ms: int | None = None) -> int:
+    def purge(self, retention_days: int, now_ms: int | None = None,
+              detection_retention_days: int | None = None) -> int:
+        """Drop events older than retention_days and detections older than
+        detection_retention_days (default: the same). Freed pages are reused, so the file
+        stops growing at steady state rather than shrinking."""
         now_ms = now_ms or int(time.time() * 1000)
         cutoff = now_ms - retention_days * 86_400_000
+        det_days = detection_retention_days or retention_days
         n = self.db.execute("DELETE FROM events WHERE time_ms < ?", (cutoff,)).rowcount
-        self.db.execute("DELETE FROM detections WHERE last_ms < ?", (cutoff,))
+        self.db.execute("DELETE FROM detections WHERE last_ms < ?",
+                        (now_ms - det_days * 86_400_000,))
         return n

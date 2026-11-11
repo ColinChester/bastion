@@ -9,7 +9,8 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
-| 26 | 2026-11-11 | Detection | GitHub CLI filter didn't stop the keychain alerts (2,587 hits) | open |
+| 27 | 2026-11-11 | Storage | Database reached 1 GB in 11 days | fixed |
+| 26 | 2026-11-11 | Detection | GitHub CLI filter didn't stop the keychain alerts (2,587 hits) | fixed |
 | 25 | 2026-11-11 | Detection | Shadow-week false positives: Safari import, .NET compiler, Zoom updater | fixed |
 | 24 | 2026-11-11 | Sensors | Files created after osquery starts aren't watched | mitigated |
 | 23 | 2026-11-10 | CI | GitHub Actions blocked by an account billing lock | open |
@@ -38,18 +39,42 @@ Status is one of: fixed, mitigated, documented, open.
 
 ---
 
+## 27. Database reached 1 GB in 11 days
+
+**Symptom.** `bastion.db` was 986 MB after 11 days: about 434,000 osquery and 407,000
+Santa events, roughly 90 MB a day. At the 30-day retention that heads for about 2.7 GB.
+
+**Cause.** Every exec is stored twice (osquery and Santa each record it), plus
+Endpoint Security open events on watched credential files. Detections need only a
+fraction of that history.
+
+**Fix.** Separate retention: raw events 14 days (`retention_days`), detections 90 days
+(`detection_retention_days`). SQLite reuses freed pages, so the file levels off around
+1.3 GB instead of shrinking. Existing installs keep whatever `retention_days` their
+`config.toml` sets, so change it there to apply.
+
+Test: `test_detections_outlive_events`.
+
 ## 26. GitHub CLI filter didn't stop the keychain alerts (2,587 hits)
 
 **Symptom.** The shadow-week report still showed *Keychain Secrets Read With the
 security CLI* firing 2,587 times on `security find-generic-password -s gh:github.com -wa
 ColinChester`, despite the `filter_gh_cli` added in #20.
 
-**Cause.** Under investigation. The filter needs the parent process to be `gh`. Either
-the parent path was empty (the parent exited before osquery looked it up, and
-Bastion's process cache didn't have it either), or another program reads the token
-this way. Some hits may also predate installing #20, which happened on Nov 11.
+**Cause.** Claude Code polls `gh` in the background (`gh auth token`, `gh issue list`),
+and gh reads its token through `security` each time. The filter was right, but osquery
+logs execs in 10-second batches and joins the parent from the live process table. By
+then gh had exited, so the parent path was empty. Bastion's process cache didn't help,
+because only osquery's exec events filled it and the batch wasn't in exec order.
+Santa's log, written within a second, had gh's exec just before each `security` call.
 
-**Fix.** Pending: the parent process data from the osquery log.
+**Fix.**
+- Santa exec events also fill the process cache, so osquery's later copy of a child
+  finds its parent.
+- The process query is ordered by `eid`, so parents come before children in a batch.
+
+Test: `test_gh_parent_resolved_from_santa_before_osquery_reports_child`, built from the
+real Nov 11 sequence.
 
 ## 25. Shadow-week false positives: Safari import, .NET compiler, Zoom updater
 

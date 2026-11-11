@@ -116,7 +116,8 @@ async def _heartbeat_task(cfg: Config, store: Store) -> None:
     while True:
         store.set_state(HEARTBEAT_KEY, str(int(time.time() * 1000)))
         if time.time() - last_purge > 3600:
-            removed = store.purge(cfg.retention_days)
+            removed = store.purge(cfg.retention_days,
+                                  detection_retention_days=cfg.detection_retention_days)
             if removed:
                 log.info("retention purge removed %d events", removed)
             last_purge = time.time()

@@ -74,7 +74,8 @@ class BaselineConfig:
 class Config:
     data_dir: Path = Path("/Library/Application Support/Bastion")
     rules_dir: Path | None = None
-    retention_days: int = 30
+    retention_days: int = 14            # raw events (about 90 MB a day on a busy Mac)
+    detection_retention_days: int = 90  # detections are small and worth keeping longer
     osquery: OsquerySource = field(default_factory=OsquerySource)
     santa: SantaSource = field(default_factory=SantaSource)
     unified_log: UnifiedLogSource = field(default_factory=UnifiedLogSource)

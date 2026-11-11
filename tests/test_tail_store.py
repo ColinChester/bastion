@@ -73,3 +73,13 @@ def test_baseline_touch(store):
     assert store.baseline_touch("binary", "a", 1) is True
     assert store.baseline_touch("binary", "a", 2) is False
     assert store.baseline_size() == {"binary": 1}
+
+
+def test_detections_outlive_events(store):
+    day = 86_400_000
+    store.add_event({"class_uid": 1007, "time": 1 * day, "metadata": {"log_name": "osquery"}})
+    store.add_or_merge_detection({"time": 1 * day, "finding_info": {"uid": "r", "title": "t"},
+                                  "severity": "low"}, "k", 60_000, None)
+    store.purge(14, now_ms=20 * day, detection_retention_days=90)
+    assert store.count_events_by_source(0) == {}
+    assert len(list(store.iter_detections(0))) == 1

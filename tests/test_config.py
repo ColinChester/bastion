@@ -7,7 +7,8 @@ from bastion.config import load_config
 
 def test_defaults_when_missing(tmp_path):
     cfg = load_config(tmp_path / "nope.toml")
-    assert cfg.retention_days == 30
+    assert cfg.retention_days == 14
+    assert cfg.detection_retention_days == 90
     assert cfg.notify.mode == "daily"
     assert cfg.resolved_rules_dir().is_dir()
 

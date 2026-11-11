@@ -2,7 +2,8 @@
 # Every key is optional; anything left out uses the default shown here.
 
 data_dir = "/Library/Application Support/Bastion"
-retention_days = 30
+retention_days = 14              # raw events; about 90 MB of database per day
+detection_retention_days = 90    # detections are small
 detection_dedupe_seconds = 60
 # rules_dir = "/opt/bastion/rules"   # default: the rules bundled with the package
 

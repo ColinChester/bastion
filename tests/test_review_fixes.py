@@ -278,3 +278,20 @@ def test_report_marks_trigger_test_hits_as_real(cfg, store):
     pipe.handle(RawRecord("osquery", oq("process_events", exec_cols(
         f"{d}/spctl", f"{d}/spctl --master-disable", flags="ADHOC"))))
     assert "[x] real" in build_report(store) and "(trigger test)" in build_report(store)
+
+
+def test_gh_parent_resolved_from_santa_before_osquery_reports_child(cfg, store):
+    """Real sequence from Nov 11: gh exits before osquery's 10 s batch, so osquery's
+    row for `security` has no parent path. Santa saw gh exec first."""
+    pipe = Pipeline(cfg, store)
+    gh = "/opt/homebrew/Cellar/gh/2.103.3/bin/gh"
+    pipe.handle(RawRecord("santa", (
+        "[2026-11-11T17:35:00.939Z] I santad: action=EXEC|decision=ALLOW|reason=UNKNOWN|"
+        f"pid=84693|pidversion=1|ppid=84657|uid=501|user=colin|mode=M|path={gh}|"
+        "args=gh auth token")))
+    cmd = "/usr/bin/security find-generic-password -s gh:github.com -wa ColinChester"
+    cols = exec_cols("/usr/bin/security", cmd, platform=1, pid=84714, parent_path="",
+                     parent_cmdline="")
+    cols["parent"] = "84693"
+    pipe.handle(RawRecord("osquery", oq("process_events", cols)))
+    assert list(store.iter_detections()) == []
