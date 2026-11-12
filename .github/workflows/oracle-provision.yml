@@ -32,14 +32,40 @@ jobs:
       - name: Check the secrets are set
         id: setup
         env:
-          HAVE: ${{ secrets.OCI_STACK_ID != '' && secrets.OCI_PRIVATE_KEY != '' && secrets.OCI_COMPARTMENT_ID != '' }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_STACK_ID: ${{ secrets.OCI_STACK_ID }}
+          OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
         run: |
-          if [ "$HAVE" = "true" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
+          names="OCI_USER_OCID OCI_TENANCY_OCID OCI_FINGERPRINT OCI_REGION OCI_PRIVATE_KEY OCI_STACK_ID OCI_COMPARTMENT_ID"
+          missing=""
+          for n in $names; do [ -n "${!n}" ] || missing="$missing $n"; done
+          if [ "$missing" = " $(echo $names)" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "::notice::OCI secrets aren't set yet (docs/oracle-vm.md); nothing to do."
+            exit 0
           fi
+          if [ -n "$missing" ]; then
+            echo "::error::These repository secrets are missing or empty (check the exact names):$missing"
+            exit 1
+          fi
+          case "$OCI_REGION" in
+            *=*|*" "*) echo "::error::OCI_REGION should be just the region, like us-ashburn-1"; exit 1 ;;
+          esac
+          case "$OCI_PRIVATE_KEY" in
+            *"BEGIN"*"PRIVATE KEY"*) ;;
+            *) echo "::error::OCI_PRIVATE_KEY should be the whole .pem file, BEGIN and END lines included"; exit 1 ;;
+          esac
+          for n in OCI_USER_OCID OCI_TENANCY_OCID OCI_STACK_ID OCI_COMPARTMENT_ID; do
+            case "${!n}" in
+              ocid1.*) ;;
+              *) echo "::error::$n should be an OCID (starts with ocid1.), without a 'name=' prefix"; exit 1 ;;
+            esac
+          done
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.setup.outputs.ready == 'true'

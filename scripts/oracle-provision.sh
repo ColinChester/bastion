@@ -33,7 +33,7 @@ finish() {  # finish RESULT DETAIL
 classify() {  # classify TEXT -> capacity|config|error
   if grep -qiE 'out of (host )?capacity|TooManyRequests|"status": ?429' <<<"$1"; then
     echo capacity
-  elif grep -qiE 'NotAuthorizedOrNotFound|NotAuthenticated|LimitExceeded|QuotaExceeded|InvalidParameter|Could not find config|ConfigFileNotFound|InvalidPrivateKey|fingerprint' <<<"$1"; then
+  elif grep -qiE 'NotAuthorizedOrNotFound|NotAuthenticated|LimitExceeded|QuotaExceeded|InvalidParameter|Could not find config|ConfigFileNotFound|InvalidPrivateKey|fingerprint|supply either a region|InvalidConfig|Invalid region' <<<"$1"; then
     echo config
   else
     echo error

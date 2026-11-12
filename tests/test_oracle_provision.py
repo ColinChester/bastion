@@ -101,6 +101,7 @@ def test_success_without_an_instance_of_that_name_is_a_setup_problem(run):
     'ServiceError: {"code": "NotAuthorizedOrNotFound", "status": 404}',
     'ServiceError: {"code": "LimitExceeded", "status": 400}',
     "ConfigFileNotFound: Could not find config file at /root/.oci/config",
+    "ValueError: Must supply either a region or an endpoint.",
 ])
 def test_setup_problems_stop_retrying(run, error):
     result, _ = run(create_error=error)

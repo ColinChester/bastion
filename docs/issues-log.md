@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 38 | 2026-11-12 | Install | Oracle workflow: "Must supply either a region or an endpoint" | fixed |
 | 37 | 2026-11-11 | Console | Passkey enrollment on iPhone failed with "Cancelled" | fixed |
 | 36 | 2026-11-11 | Install | Phase 3 setup script would have run a command from its closing message | fixed |
 | 35 | 2026-11-11 | Agents | The worker was started without the action gateway, so nothing would be proposed | fixed |
@@ -48,6 +49,23 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 38. Oracle workflow: "Must supply either a region or an endpoint"
+
+**Symptom.** The first real run of `oracle-provision` ended with `result: error -
+listing instances failed: ValueError: Must supply either a region or an endpoint`.
+
+**Cause.** The `OCI_REGION` secret reached the runner empty (not created, or created
+under a slightly different name). GitHub passes a missing secret as an empty string, so
+the config file had `region=` with nothing after it. The workflow only skipped when the
+stack and key secrets were missing, so it ran with a half-filled config, and the script
+classed the error as "unexpected" (keep retrying) rather than a setup problem.
+
+**Fix.** The workflow now checks every secret first and names any that are missing or
+malformed (a `region=`/`user=` prefix, a key without its BEGIN line, an ID that isn't an
+OCID). The script treats region/config errors as setup problems.
+
+Test: `test_setup_problems_stop_retrying` (region case).
 
 ## 37. Passkey enrollment on iPhone failed with "Cancelled"
 
