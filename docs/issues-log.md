@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 39 | 2026-11-12 | Install | Phoenix asked for a login and silently dropped traces | fixed |
 | 38 | 2026-11-12 | Install | Oracle workflow: "Must supply either a region or an endpoint" | fixed |
 | 37 | 2026-11-11 | Console | Passkey enrollment on iPhone failed with "Cancelled" | fixed |
 | 36 | 2026-11-11 | Install | Phase 3 setup script would have run a command from its closing message | fixed |
@@ -49,6 +50,21 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 39. Phoenix asked for a login and silently dropped traces
+
+**Symptom.** Opening http://localhost:6006 showed a Phoenix sign-in page, and there were
+no credentials anywhere in Bastion's setup.
+
+**Cause.** The compose file used `arizephoenix/phoenix:latest`. Phoenix's 2 November
+2026 release turns authentication on by default whenever it listens on a non-loopback
+address, which it always does inside a container. With auth on, Phoenix also rejects
+OTLP traces that carry no API key, so the core's traces were being refused (tracing
+failures are logged as warnings and never block triage, which is why nothing else broke).
+
+**Fix.** `PHOENIX_ENABLE_AUTH=false` in the compose file. Phoenix is reachable only from
+the compose network and from 127.0.0.1 on the Mac, so a login adds nothing. Traces sent
+while auth was on are lost.
 
 ## 38. Oracle workflow: "Must supply either a region or an endpoint"
 

@@ -83,6 +83,10 @@ services:
     image: arizephoenix/phoenix:latest
     environment:
       PHOENIX_WORKING_DIR: /mnt/data
+      # Phoenix turns login on by default when it listens on 0.0.0.0, which it must inside
+      # a container. That also makes it reject the core's traces (no API key). It is only
+      # reachable from the compose network and 127.0.0.1 on the Mac, so login stays off.
+      PHOENIX_ENABLE_AUTH: "false"
     volumes:
       - phoenix-data:/mnt/data
     ports:
