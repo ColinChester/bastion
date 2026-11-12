@@ -41,7 +41,8 @@ classify() {  # classify TEXT -> capacity|config|error
 }
 
 first_line() {  # the most useful line of an error text
-  grep -iE -m1 'capacity|error|exceeded|authoriz|invalid|429' <<<"$1" || head -c 300 <<<"$1"
+  grep -ioE -m1 '[^."]*out of (host )?capacity[^."]*' <<<"$1" \
+    || grep -iE -m1 'error|exceeded|authoriz|invalid|429' <<<"$1" || head -c 300 <<<"$1"
 }
 
 count_instances() {  # instances named $NAME that aren't terminated; fails if the API does

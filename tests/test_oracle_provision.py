@@ -77,8 +77,11 @@ def test_out_of_capacity_retries_quietly(run):
 
 
 def test_capacity_found_only_in_the_logs(run):
-    result, _ = run(state="FAILED", why="", logs="Error: 500-InternalError, Out of host capacity.")
+    result, _ = run(state="FAILED",
+                    why="The job failed due to an error in the Terraform configuration.",
+                    logs="Error: 500-InternalError, Out of host capacity.")
     assert result["result"] == "capacity"
+    assert "Out of host capacity" in result["detail"]   # not the generic Terraform line
 
 
 def test_rate_limit_counts_as_retry(run):
