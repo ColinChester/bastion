@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "oracle-provision.sh"
+LOOP = SCRIPT.with_name("oracle-provision-loop.sh")
 
 FAKE = r'''#!/usr/bin/env bash
 # Fake oci: behaviour chosen by files in $FAKE_DIR.
@@ -46,15 +47,16 @@ def run(tmp_path):
     fake.write_text(FAKE)
     fake.chmod(0o755)
 
-    def go(**files) -> tuple[dict, str]:
+    def go(script=SCRIPT, extra_env=None, **files) -> tuple[dict, str]:
         for name, text in files.items():
             (tmp_path / name).write_text(text)
         out = tmp_path / "out"
         out.write_text("")
         env = {**os.environ, "OCI": str(fake), "FAKE_DIR": str(tmp_path),
                "OCI_STACK_ID": "ocid1.ormstack.test", "OCI_COMPARTMENT_ID": "ocid1.c",
-               "POLL_SECONDS": "0", "MAX_POLLS": "3", "GITHUB_OUTPUT": str(out)}
-        proc = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True,
+               "POLL_SECONDS": "0", "MAX_POLLS": "3", "GITHUB_OUTPUT": str(out),
+               **(extra_env or {})}
+        proc = subprocess.run(["bash", str(script)], env=env, capture_output=True,
                               text=True, timeout=30)
         assert proc.returncode == 0, proc.stderr
         result = dict(line.split("=", 1) for line in out.read_text().splitlines())
@@ -125,3 +127,23 @@ def test_job_that_never_finishes(run):
     result, _ = run(state="IN_PROGRESS")
     assert result["result"] == "error"
     assert "still running" in result["detail"]
+
+
+def test_loop_keeps_trying_through_capacity_errors(run):
+    result, calls = run(script=LOOP, extra_env={"RETRY_EVERY": "0", "RETRY_FOR": "1"},
+                        state="FAILED", why="Out of host capacity.")
+    assert result["result"] == "capacity"
+    assert calls.count("create-apply-job") == int(result["attempts"]) >= 1
+
+
+def test_loop_stops_as_soon_as_the_vm_exists(run, tmp_path):
+    result, calls = run(script=LOOP, extra_env={"RETRY_EVERY": "0", "RETRY_FOR": "600"},
+                        state="SUCCEEDED", creates="")
+    assert result["result"] == "provisioned" and result["attempts"] == "1"
+    assert calls.count("create-apply-job") == 1
+
+
+def test_loop_stops_on_a_setup_problem(run):
+    result, _ = run(script=LOOP, extra_env={"RETRY_EVERY": "0", "RETRY_FOR": "600"},
+                    create_error='ServiceError: {"code": "NotAuthorizedOrNotFound"}')
+    assert result["result"] == "config" and result["attempts"] == "1"

@@ -32,13 +32,14 @@ OCI Console → Compute → Instances → **Create instance**:
 ## Keep retrying automatically (GitHub Actions)
 
 If the console keeps saying "Out of host capacity", let GitHub retry for you. The
-`oracle-provision` workflow applies your Resource Manager stack every 30 minutes, even
-while your Mac is asleep, and **disables itself once the VM exists**. It then opens a
+`oracle-provision` workflow applies your Resource Manager stack every 10 minutes, even
+while your Mac is asleep (each run keeps trying for up to 5 hours and an hourly
+schedule starts the next, because GitHub drops many scheduled triggers), and **disables itself once the VM exists**. It then opens a
 GitHub issue (and, optionally, sends an ntfy push) so you know.
 
 | Outcome of a run | What the workflow does |
 | --- | --- |
-| Out of host capacity, or Oracle rate-limited the request | Green run, tries again in 30 minutes |
+| Out of host capacity, or Oracle rate-limited the request | Tries again in 10 minutes, within the same run |
 | VM created, or it already exists | Disables itself, opens an issue "Oracle VM is up" |
 | A setup problem (bad key, missing permission, service limit, wrong instance name) | Disables itself, opens an issue with the error, red run |
 | Anything else | Red run (GitHub emails you), keeps trying |
@@ -96,7 +97,7 @@ Then delete the downloaded `.pem` from your Mac.
 
 Actions tab → **oracle-provision** → Run workflow, to try once right away. Open the run:
 a green run whose log says `result: capacity` means everything is set up and it's just
-waiting for Oracle. After that it runs on its own at :07 and :37 past each hour.
+waiting for Oracle. After that it runs on its own; a new run starts hourly at :17 if none is in progress.
 
 To stop it early: Actions → oracle-provision → ⋯ → Disable workflow. After you fix a
 setup problem it reported, enable it again from the same menu.

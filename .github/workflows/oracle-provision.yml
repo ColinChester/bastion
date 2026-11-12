@@ -1,15 +1,17 @@
 # Keeps trying to create the Oracle Cloud A1 VM (Always Free capacity is often
 # unavailable) and turns itself off once the VM exists. Setup: docs/oracle-vm.md.
 #
-# Every run: one apply of the Resource Manager stack. "Out of host capacity" is a quiet,
-# green run. Success, or a setup problem retrying can't fix, opens an issue and disables
+# Each run keeps applying the Resource Manager stack every 10 minutes for up to 5 hours
+# (GitHub drops many scheduled triggers, so one run must cover the gaps); the hourly
+# schedule starts the next long run. "Out of host capacity" all the way through is a
+# quiet, green run. Success, or a setup problem retrying can't fix, opens an issue and disables
 # this workflow. Re-enable it from the Actions tab (or `gh workflow enable
 # oracle-provision.yml`) after fixing a setup problem.
 name: oracle-provision
 
 on:
   schedule:
-    - cron: "7,37 * * * *"   # every 30 minutes (UTC), off the top of the hour
+    - cron: "17 * * * *"   # hourly (UTC); a run already in progress keeps going
   workflow_dispatch:
 
 permissions:
@@ -23,7 +25,7 @@ jobs:
   provision:
     if: github.repository == 'ColinChester/bastion'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 350
     permissions:
       contents: read
       actions: write   # to disable this workflow when done
@@ -109,7 +111,7 @@ jobs:
           OCI_INSTANCE_NAME: ${{ vars.OCI_INSTANCE_NAME || 'bastion-vm' }}
           OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
           PYTHONWARNINGS: ignore
-        run: ./scripts/oracle-provision.sh
+        run: ./scripts/oracle-provision-loop.sh
 
       - name: Done - stop retrying
         if: steps.try.outputs.result == 'provisioned'

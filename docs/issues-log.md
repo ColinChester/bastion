@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 40 | 2026-11-12 | Install | GitHub ran the Oracle retry workflow once in 5 hours instead of 10 times | fixed |
 | 39 | 2026-11-12 | Install | Phoenix asked for a login and silently dropped traces | fixed |
 | 38 | 2026-11-12 | Install | Oracle workflow: "Must supply either a region or an endpoint" | fixed |
 | 37 | 2026-11-11 | Console | Passkey enrollment on iPhone failed with "Cancelled" | fixed |
@@ -50,6 +51,24 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 40. GitHub ran the Oracle retry workflow once in 5 hours instead of 10 times
+
+**Symptom.** With a `7,37 * * * *` schedule, `oracle-provision` ran once between 06:49
+and 14:39 UTC, so the VM was tried about every 5 hours instead of every 30 minutes.
+
+**Cause.** GitHub's scheduled triggers are best effort: under load it delays and drops
+them, and small or quiet repositories are hit hardest. A design that does one attempt
+per trigger inherits every dropped trigger.
+
+**Fix.** Each run now loops itself (`scripts/oracle-provision-loop.sh`): an attempt every
+10 minutes for up to 5 hours, stopping at once on success or a setup problem. The
+schedule is hourly and only has to start the next long run; with the concurrency group, a
+trigger that fires during a run waits instead of overlapping. Public-repo Actions minutes
+are free, so long runs cost nothing.
+
+Test: `test_loop_keeps_trying_through_capacity_errors`, `test_loop_stops_as_soon_as_the_vm_exists`,
+`test_loop_stops_on_a_setup_problem`.
 
 ## 39. Phoenix asked for a login and silently dropped traces
 
