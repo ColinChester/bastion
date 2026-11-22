@@ -258,7 +258,7 @@ def test_only_read_operations_are_ever_called(run):
     code, out, calls = run("all", responses(instance(), extra=extra),
                            OCI_STACK_ID="ocid1.ormstack.x")
     assert code == 0, out
-    verbs = {line.split()[2] if line.startswith(("compute", "network", "resource-manager",
+    verbs = {line.split()[2] if line.startswith(("compute", "network", "resource-manager", "iam",
                                                  "instance-agent", "audit", "cloud-guard",
                                                  "budgets", "bv", "monitoring", "limits"))
              else line for line in calls.splitlines()}
@@ -312,3 +312,47 @@ def test_redact_keeps_private_ips_and_versions():
 
 def test_fingerprint_matches_ssh_keygen_format():
     assert inspect_mod.ssh_fingerprints(PUBKEY) == [f"{FP} (ssh-ed25519)"]
+
+
+# ---------------------------------------------------------------- first live run (Nov 21)
+
+def test_audit_handles_missing_fields_and_drops_reads_sent_as_post(run):
+    """The first live run crashed on an event with no response status, and listed dozens of
+    console metric queries (POST SummarizeMetricsData) as writes."""
+    events = {"data": [
+        {"event-time": "2026-11-21T23:50:00Z", "data": {
+            "event-name": "SummarizeMetricsData", "request": {"action": "POST"},
+            "response": {"status": "200"}, "identity": {"principal-name": "Colin Chester"}}},
+        {"event-time": "2026-11-21T23:49:00Z", "data": {
+            "event-name": "InteractiveLogin", "request": {"action": "POST"},
+            "response": {"status": None}, "identity": {"principal-name": "colin@example.com",
+                                                       "ip-address": "98.76.54.32"}}},
+        {"event-time": None, "data": {"event-name": None, "request": {"action": "PUT"},
+                                      "response": None, "identity": None}},
+    ]}
+    code, out, _ = run("audit", [[["audit", "event", "list"], {"stdout": events}]])
+    assert code == 0, out
+    assert "InteractiveLogin" in out and "SummarizeMetricsData" not in out
+    assert "2 write operation(s)" in out
+
+
+def test_limits_without_a_vm_checks_every_availability_domain(run):
+    resp = [*responses(None),
+            [["iam", "availability-domain", "list"],
+             {"stdout": {"data": [{"name": "IgAY:US-ASHBURN-AD-1"},
+                                  {"name": "IgAY:US-ASHBURN-AD-2"}]}}],
+            [["limits"], {"stdout": {"data": {"used": 0, "available": 4}}}]]
+    code, out, calls = run("limits", resp)
+    assert code == 0, out
+    assert "US-ASHBURN-AD-2  A1 ocpus  used 0 of 4" in out
+    assert calls.count("--availability-domain") == 4
+
+
+def test_errors_show_the_real_message_not_the_cli_key_warning(run):
+    stderr = ("Warning: To increase security of your API key located at /home/runner/.oci/"
+              "key.pem, append an extra line with 'OCI_API_KEY'\n"
+              'ServiceError: {"code": "NotAuthorizedOrNotFound", "status": 404}')
+    code, out, _ = run("budget", [[["budgets"], {"stderr": stderr}]])
+    assert code == 2
+    assert "NotAuthorizedOrNotFound" in out and "read usage-budgets" in out
+    assert "OCI_API_KEY" not in out

@@ -110,6 +110,7 @@ jobs:
           EXPECT_PUBLIC_IP: ${{ vars.EXPECT_PUBLIC_IP || 'any' }}
           EXPECT_CLOUD_INIT: ${{ vars.EXPECT_CLOUD_INIT || 'any' }}
           OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+          SUPPRESS_LABEL_WARNING: "True"
           PYTHONWARNINGS: ignore
         run: python3 scripts/oracle-inspect.py "$QUERY"
 

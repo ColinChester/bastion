@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 42 | 2026-11-21 | Tooling | oracle-inspect's first live run: audit crashed, console metric reads listed as writes, limits failed | fixed |
 | 41 | 2026-11-21 | Install | Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP | fixed |
 | 40 | 2026-11-12 | Install | GitHub ran the Oracle retry workflow once in 5 hours instead of 10 times | fixed |
 | 39 | 2026-11-12 | Install | Phoenix asked for a login and silently dropped traces | fixed |
@@ -52,6 +53,30 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 42. oracle-inspect's first live run: audit crashed, console metric reads listed as writes, limits failed
+
+**Symptom.** The first `all` run (run 1, Nov 21) stopped with `TypeError: unsupported format
+string passed to NoneType.__format__` in the audit section. Before the crash, 60 audit lines
+were mostly `SummarizeMetricsData`. `limits` printed only the OCI CLI's API-key label warning.
+
+**Cause.** The fake `oci` in the tests always returned complete events, but real audit
+events can carry `null` fields (`response.status`, `event-time`), and `dict.get(key, "?")`
+returns `None` when the key is present with a null value. Metric queries from the console
+are POSTs, so the GET/HEAD filter kept them. A1 limits are per availability domain and the
+query sent none when there was no VM; the error shown was the first stderr line, which was
+the CLI's key-label warning.
+
+**Fix.** Every field that is formatted or sorted now falls back with `or` instead of a
+`get` default. Audit also drops events whose names are reads (`Get…`, `List…`,
+`Summarize…`, `Search…`, `Request…`) and shows at most the newest 100. `limits` uses the
+VM's availability domain, or checks every one when there's no VM. Error messages skip
+`Warning:` lines and prefer the line with the error code, and the workflow sets
+`SUPPRESS_LABEL_WARNING`.
+
+Test: `test_audit_handles_missing_fields_and_drops_reads_sent_as_post`,
+`test_limits_without_a_vm_checks_every_availability_domain`,
+`test_errors_show_the_real_message_not_the_cli_key_warning`.
 
 ## 41. Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP
 

@@ -139,7 +139,7 @@ def find_instance() -> dict | None:
         data = oci("compute", "instance", "list", "--compartment-id", compartment(),
                    "--display-name", name, "--all").get("data") or []
         live = [i for i in data if i.get("lifecycle-state") not in ("TERMINATED", "TERMINATING")]
-        live.sort(key=lambda i: i.get("time-created", ""), reverse=True)
+        live.sort(key=lambda i: (i.get("time-created") or ""), reverse=True)
         _instance_cache = live[0] if live else {}
     return _instance_cache or None
 
@@ -237,7 +237,7 @@ def q_instance() -> int:
     cfg = inst.get("shape-config") or {}
     src = inst.get("source-details") or {}
     say(f"instance    {inst.get('display-name')}  {inst.get('lifecycle-state')}  "
-        f"created {inst.get('time-created', '?')[:16]}  {inst.get('availability-domain')}")
+        f"created {(inst.get('time-created') or '?')[:16]}  {inst.get('availability-domain')}")
     say(f"id          {inst.get('id')}")
     say(f"shape       {inst.get('shape')}  ocpus={cfg.get('ocpus')}  "
         f"memory_gb={cfg.get('memory-in-gbs')}")
@@ -247,8 +247,8 @@ def q_instance() -> int:
 
 def q_image() -> int:
     img = image_of(require_instance())
-    say(f"image       {img.get('display-name', '?')}  ({img.get('operating-system', '?')} "
-        f"{img.get('operating-system-version', '?')})")
+    say(f"image       {(img.get('display-name') or '?')}  ({(img.get('operating-system') or '?')} "
+        f"{(img.get('operating-system-version') or '?')})")
     return 0
 
 
@@ -290,9 +290,9 @@ def q_agent() -> int:
     inst = require_instance()
     data = oci("instance-agent", "plugin", "list", "--compartment-id", compartment(),
                "--instanceagent-id", inst["id"], "--all").get("data") or []
-    for p in sorted(data, key=lambda p: p.get("name", "")):
+    for p in sorted(data, key=lambda p: (p.get("name") or "")):
         msg = f"  ({p['message']})" if p.get("message") else ""
-        say(f"agent       {p.get('status', '?'):<10} {p.get('name')}{msg}")
+        say(f"agent       {(p.get('status') or '?'):<10} {p.get('name')}{msg}")
     if not data:
         say("agent       no plugins reported (agent not running yet?)")
     return 0
@@ -346,18 +346,23 @@ def q_metrics() -> int:
 
 
 def q_limits() -> int:
+    """A1 limits are per availability domain: the VM's, or every AD when there's no VM."""
     inst = find_instance()
-    ad = inst.get("availability-domain") if inst else None
-    for label, limit, unit in (("ocpus", "standard-a1-core-count", ""),
-                               ("memory", "standard-a1-memory-count", " GB")):
-        args = ["limits", "resource-availability", "get", "--compartment-id", compartment(),
-                "--service-name", "compute", "--limit-name", limit]
-        if ad:
-            args += ["--availability-domain", ad]
-        d = oci(*args).get("data") or {}
-        used, avail = d.get("used"), d.get("available")
-        total = (used or 0) + (avail or 0) if used is not None and avail is not None else "?"
-        say(f"limits      A1 {label:<6} used {used}{unit} of {total}{unit}")
+    if inst:
+        ads = [inst["availability-domain"]]
+    else:
+        ads = [a["name"] for a in oci("iam", "availability-domain", "list", "--compartment-id",
+                                      compartment()).get("data") or []]
+    for ad in ads:
+        for label, limit, unit in (("ocpus", "standard-a1-core-count", ""),
+                                   ("memory", "standard-a1-memory-count", " GB")):
+            d = oci("limits", "resource-availability", "get", "--compartment-id", compartment(),
+                    "--service-name", "compute", "--limit-name", limit,
+                    "--availability-domain", ad).get("data") or {}
+            used, avail = d.get("used"), d.get("available")
+            total = (used or 0) + (avail or 0) if None not in (used, avail) else "?"
+            say(f"limits      {ad.split(':')[-1]}  A1 {label:<6} used {used}{unit} of "
+                f"{total}{unit}")
     return 0
 
 
@@ -365,8 +370,9 @@ def q_stack() -> int:
     data = oci("resource-manager", "job", "list", "--stack-id", env("OCI_STACK_ID"),
                "--sort-by", "TIMECREATED", "--sort-order", "DESC", "--limit", "10").get("data")
     for job in data or []:
-        say(f"stack job   {job.get('time-created', '?')[:16]}  {job.get('operation'):<8} "
-            f"{job.get('lifecycle-state'):<11} {job.get('id')}")
+        say(f"stack job   {(job.get('time-created') or '?')[:16]}  "
+            f"{job.get('operation') or '?':<8} "
+            f"{job.get('lifecycle-state') or '?':<11} {job.get('id')}")
     if not data:
         say("stack job   none")
     return 0
@@ -391,6 +397,10 @@ def q_job_log() -> int:
     return 0
 
 
+READ_EVENT = re.compile(r"^(Get|List|Summarize|Search|Request|Retrieve|Head|Validate)[A-Z]")
+AUDIT_SHOWN = 100
+
+
 def audit_events(hours: int) -> list[dict]:
     end = datetime.now(UTC).replace(second=0, microsecond=0)
     start = end - timedelta(hours=hours)
@@ -403,8 +413,10 @@ def audit_events(hours: int) -> list[dict]:
         action = ((d.get("request") or {}).get("action") or "").upper()
         if action in ("GET", "HEAD", "OPTIONS"):
             continue  # reads, including this script's own
+        if READ_EVENT.match(d.get("event-name") or ""):
+            continue  # reads sent as POST (metric queries from the console, searches)
         writes.append(ev)
-    writes.sort(key=lambda e: e.get("event-time", ""))
+    writes.sort(key=lambda e: e.get("event-time") or "")
     return writes
 
 
@@ -412,11 +424,14 @@ def audit_report() -> list[str]:
     hours = int(os.environ.get("AUDIT_HOURS") or 24)
     hours = max(1, min(hours, 24 * 14))
     events = audit_events(hours)
-    for ev in events:
+    if len(events) > AUDIT_SHOWN:
+        say(f"audit       showing the newest {AUDIT_SHOWN} of {len(events)}")
+    for ev in events[-AUDIT_SHOWN:]:
         d = ev.get("data") or {}
         ident = d.get("identity") or {}
-        status = (d.get("response") or {}).get("status", "?")
-        say(f"audit       {ev.get('event-time', '?')[:16]}  {d.get('event-name', '?'):<28} "
+        status = str((d.get("response") or {}).get("status") or "-")
+        say(f"audit       {str(ev.get('event-time') or '?')[:16]}  "
+            f"{str(d.get('event-name') or '?'):<28} "
             f"{status:<4} by {ident.get('principal-name') or '?'} "
             f"from {ident.get('ip-address') or '?'}  on {d.get('resource-name') or '-'}")
     say(f"audit       {len(events)} write operation(s) in the last {hours} h")
@@ -437,9 +452,9 @@ def cloud_guard_report() -> list[str]:
     for p in items or []:
         if p.get("lifecycle-detail") not in (None, "OPEN"):
             continue
-        say(f"cloud-guard {p.get('risk-level', '?'):<8} {p.get('detector-rule-id', '?')}  "
-            f"on {p.get('resource-type', '?')} {p.get('resource-name', '?')}  "
-            f"last {str(p.get('time-last-detected', '?'))[:16]}")
+        say(f"cloud-guard {(p.get('risk-level') or '?'):<8} {(p.get('detector-rule-id') or '?')}  "
+            f"on {(p.get('resource-type') or '?')} {(p.get('resource-name') or '?')}  "
+            f"last {str(p.get('time-last-detected') or '?')[:16]}")
         if p.get("risk-level") in ("CRITICAL", "HIGH"):
             problems.append(f"Cloud Guard {p.get('risk-level')}: {p.get('detector-rule-id')}")
     if not items:
@@ -466,9 +481,10 @@ def q_budget() -> int:
 def q_backups() -> int:
     data = oci("bv", "boot-volume-backup", "list", "--compartment-id", compartment(),
                "--all").get("data") or []
-    for b in sorted(data, key=lambda b: b.get("time-created", ""), reverse=True)[:10]:
-        say(f"backup      {b.get('time-created', '?')[:16]}  {b.get('lifecycle-state'):<10} "
-            f"{b.get('type', '?'):<11} {b.get('display-name')}")
+    for b in sorted(data, key=lambda b: (b.get("time-created") or ""), reverse=True)[:10]:
+        say(f"backup      {(b.get('time-created') or '?')[:16]}  "
+            f"{b.get('lifecycle-state') or '?':<10} "
+            f"{(b.get('type') or '?'):<11} {b.get('display-name')}")
     if not data:
         say("backup      no boot volume backups")
     return 0
@@ -524,8 +540,8 @@ def check_report() -> list[str]:
 
     img = image_of(inst)
     os_ok = (img.get("operating-system") == want["os"]
-             and str(img.get("operating-system-version", "")).startswith(want["os_version"]))
-    line("image", f"{img.get('display-name', '?')}",
+             and str(img.get("operating-system-version") or "").startswith(want["os_version"]))
+    line("image", f"{(img.get('display-name') or '?')}",
          None if os_ok else f"expected {want['os']} {want['os_version']}")
 
     publics = [v.get("public-ip") for v in vnics_of(inst) if v.get("public-ip")]
@@ -548,7 +564,7 @@ def check_report() -> list[str]:
         ci_problem = "the Tailscale key placeholder was never replaced"
     elif want["cloud_init"] == "yes" and not ci["set"]:
         ci_problem = "expected cloud-init (Tailscale is never installed without it)"
-    desc = "not set" if not ci["set"] else f"set, {ci.get('bytes', '?')} bytes"
+    desc = "not set" if not ci["set"] else f"set, {(ci.get('bytes') or '?')} bytes"
     line("cloud-init", desc, ci_problem)
     return bad
 
@@ -592,7 +608,9 @@ ALL = ["instance", "image", "network", "ssh-key", "cloud-init", "agent", "metric
 
 def explain(name: str, err: Exception) -> str:
     text = str(err)
-    first = next((ln for ln in text.splitlines() if ln.strip()), text)[:300]
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith("Warning:")]
+    first = (next((ln for ln in lines if "Error" in ln or "code" in ln), None)
+             or (lines[0] if lines else text))[:300]
     if "NotAuthorizedOrNotFound" in text or '"status": 404' in text:
         hint = POLICY.get(name)
         if hint:
