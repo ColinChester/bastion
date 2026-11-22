@@ -1,0 +1,118 @@
+# Read-only view of the Oracle VM and tenancy: run a query by hand, or let the daily `watch`
+# check the VM, idle-reclaim metrics, audit writes and Cloud Guard (a red run emails you).
+# Runs as the read-only `bastion-inspector` user, never the provisioner. Setup and the query
+# list: docs/oracle-vm.md ("Inspecting the VM"). The repo is public, so this log is too;
+# scripts/oracle-inspect.py redacts keys, user_data, OCIDs, public IPs and emails.
+name: oracle-inspect
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: What to look at
+        type: choice
+        default: check
+        options: [check, watch, all, instance, image, network, ssh-key, cloud-init, agent,
+                  metrics, limits, stack, job-log, audit, cloud-guard, budget, backups]
+      job_id:
+        description: "job-log only: the stack job OCID (ocid1.ormjob…)"
+        required: false
+      audit_hours:
+        description: "audit only: how many hours back (1-336)"
+        required: false
+        default: "24"
+  schedule:
+    - cron: "41 13 * * *"   # daily watch, 08:41 New York (EST)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-inspect
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.repository == 'ColinChester/bastion'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the secrets are set
+        id: setup
+        env:
+          OCI_INSPECT_USER_OCID: ${{ secrets.OCI_INSPECT_USER_OCID }}
+          OCI_INSPECT_FINGERPRINT: ${{ secrets.OCI_INSPECT_FINGERPRINT }}
+          OCI_INSPECT_PRIVATE_KEY: ${{ secrets.OCI_INSPECT_PRIVATE_KEY }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          names="OCI_INSPECT_USER_OCID OCI_INSPECT_FINGERPRINT OCI_INSPECT_PRIVATE_KEY OCI_TENANCY_OCID OCI_REGION"
+          missing=""
+          for n in $names; do [ -n "${!n}" ] || missing="$missing $n"; done
+          if [ -n "$missing" ]; then
+            if [ "${{ github.event_name }}" = schedule ]; then
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::oracle-inspect isn't set up yet (docs/oracle-vm.md); missing:$missing"
+              exit 0
+            fi
+            echo "::error::These repository secrets are missing or empty:$missing"
+            exit 1
+          fi
+          case "$OCI_INSPECT_PRIVATE_KEY" in
+            *"BEGIN"*"PRIVATE KEY"*) ;;
+            *) echo "::error::OCI_INSPECT_PRIVATE_KEY should be the whole .pem file"; exit 1 ;;
+          esac
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.setup.outputs.ready == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.setup.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install the OCI CLI
+        if: steps.setup.outputs.ready == 'true'
+        run: pip install --quiet oci-cli==3.96.2
+
+      - name: Write the OCI config (read-only user)
+        if: steps.setup.outputs.ready == 'true'
+        env:
+          OCI_INSPECT_USER_OCID: ${{ secrets.OCI_INSPECT_USER_OCID }}
+          OCI_INSPECT_FINGERPRINT: ${{ secrets.OCI_INSPECT_FINGERPRINT }}
+          OCI_INSPECT_PRIVATE_KEY: ${{ secrets.OCI_INSPECT_PRIVATE_KEY }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          umask 077
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_INSPECT_PRIVATE_KEY" > ~/.oci/key.pem
+          {
+            echo "[DEFAULT]"
+            echo "user=$OCI_INSPECT_USER_OCID"
+            echo "fingerprint=$OCI_INSPECT_FINGERPRINT"
+            echo "tenancy=$OCI_TENANCY_OCID"
+            echo "region=$OCI_REGION"
+            echo "key_file=$HOME/.oci/key.pem"
+          } > ~/.oci/config
+
+      - name: Inspect
+        if: steps.setup.outputs.ready == 'true'
+        env:
+          QUERY: ${{ github.event_name == 'schedule' && 'watch' || inputs.query }}
+          JOB_ID: ${{ inputs.job_id }}
+          AUDIT_HOURS: ${{ github.event_name == 'schedule' && '24' || inputs.audit_hours }}
+          OCI_COMPARTMENT_ID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_STACK_ID: ${{ secrets.OCI_STACK_ID }}
+          OCI_INSTANCE_NAME: ${{ vars.OCI_INSTANCE_NAME || 'bastion-vm' }}
+          EXPECT_SSH_FP: ${{ vars.EXPECT_SSH_FP }}
+          EXPECT_PUBLIC_IP: ${{ vars.EXPECT_PUBLIC_IP || 'any' }}
+          EXPECT_CLOUD_INIT: ${{ vars.EXPECT_CLOUD_INIT || 'any' }}
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+          PYTHONWARNINGS: ignore
+        run: python3 scripts/oracle-inspect.py "$QUERY"
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf ~/.oci

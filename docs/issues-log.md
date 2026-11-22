@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 41 | 2026-11-21 | Install | Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP | fixed |
 | 40 | 2026-11-12 | Install | GitHub ran the Oracle retry workflow once in 5 hours instead of 10 times | fixed |
 | 39 | 2026-11-12 | Install | Phoenix asked for a login and silently dropped traces | fixed |
 | 38 | 2026-11-12 | Install | Oracle workflow: "Must supply either a region or an endpoint" | fixed |
@@ -51,6 +52,39 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 41. Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP
+
+**Symptom.** `oracle-provision` created `bastion-vm` on Nov 13 and stopped, but the VM never
+joined Tailscale. `ssh -i ~/.ssh/bastion_vm ubuntu@<ip>` failed with `Permission denied
+(publickey)` and no passphrase prompt; `opc@` failed the same way. The console showed `opc`
+as the login user.
+
+**Cause.** Several at once, all in the Resource Manager stack, which had been made with
+"Save as stack" from the Create instance page and kept the console's defaults:
+- the image was Oracle Linux (hence `opc`), not Ubuntu 24.04, and the shape was 1 OCPU /
+  6 GB, not 2 / 12;
+- `metadata` had no `user_data`, so cloud-init (Tailscale, Docker) never ran;
+- `assign_public_ip = false` with only an internet gateway, so the VM had no route out
+  and couldn't have installed Tailscale anyway;
+- its SSH key (`SHA256:UR23D3…`) no longer matched `~/.ssh/bastion_vm` (`SHA256:evvIOa…`):
+  the key pair was regenerated on the Mac after the stack was made, so the matching private
+  key was gone.
+Nothing checked the stack before the workflow applied it, and the workflow only confirms
+that an instance with the right name exists.
+
+**Fix.** The stack's Terraform was rewritten (kept in the gitignored
+`deploy/vm/stack.local/`): an `oci_core_images` lookup for the newest Ubuntu 24.04 A1 image,
+2 OCPU / 12 GB, a public IP, `ssh_authorized_keys` from `bastion_vm.pub`, `user_data` from
+`cloud-init.local.yaml` with a 30-day reusable Tailscale key, and `lifecycle.ignore_changes`
+on image and metadata. The wrong VM was terminated and the workflow re-enabled.
+`docs/oracle-vm.md` now lists the fields to verify in the stack and says to read a Plan
+first. New: the read-only `oracle-inspect` workflow, whose `check` query reports each of
+these mismatches in one run, and whose daily `watch` keeps checking.
+
+Test: `test_check_flags_every_problem_the_nov_13_vm_had`,
+`test_check_catches_an_unreplaced_tailscale_placeholder`, plus the redaction tests in
+`tests/test_oracle_inspect.py`.
 
 ## 40. GitHub ran the Oracle retry workflow once in 5 hours instead of 10 times
 

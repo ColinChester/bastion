@@ -54,6 +54,26 @@ repository variable `OCI_INSTANCE_NAME` to the name you used). Use a Tailscale a
 that survives the wait: **reusable, pre-approved, expiring in 30 days** instead of the
 1-hour key, and delete it in Tailscale once the VM has joined.
 
+**Don't trust "Save as stack" from the Create instance page.** The first stack made that way
+kept the console's defaults: an Oracle Linux image, 1 OCPU / 6 GB, no public IP and no
+cloud-init, and its SSH key was later overwritten on the Mac (issue #41). Download the stack's
+Terraform (Stack details → Terraform configuration → Download) and check that the
+`oci_core_instance` has:
+
+| Field | Value |
+| --- | --- |
+| `source_details.source_id` | a Canonical Ubuntu 24.04 **aarch64** image (a `data "oci_core_images"` lookup filtered by OS, version and shape keeps it current) |
+| `shape_config` | `ocpus = 2`, `memory_in_gbs = 12` |
+| `create_vnic_details.assign_public_ip` | `true`. With only an internet gateway, a VM without one has no route out, so cloud-init can't install Tailscale |
+| `metadata.ssh_authorized_keys` | the contents of `~/.ssh/bastion_vm.pub` (`ssh-keygen -lf` both to compare fingerprints) |
+| `metadata.user_data` | `base64encode(file("cloud-init.local.yaml"))`, with the 30-day key in that file |
+| `lifecycle.ignore_changes` | `[source_details[0].source_id, metadata]`, so a later apply doesn't replace the VM |
+
+Keep the edited files in `deploy/vm/stack.local/` (gitignored: they hold the Tailscale key),
+zip `main.tf`, `bastion_vm.pub` and `cloud-init.local.yaml`, and upload the zip in Edit stack.
+Then press **Plan** and read its log: it should say `Plan: 1 to add` with the values above.
+The workflow skips the apply while any `bastion-vm` is running, so terminate a wrong one first.
+
 ### 2. A user that can only do this
 
 So the key stored in GitHub can't touch anything else in the account:
@@ -104,9 +124,80 @@ setup problem it reported, enable it again from the same menu.
 
 ## After it boots (5–10 minutes)
 
-1. Check that `bastion-vm` appears in your Tailscale admin console, then run `tailscale ssh ubuntu@bastion-vm` from your Mac.
-2. Close public SSH. In OCI → Networking → your VCN → Security Lists, delete the ingress rule for TCP 22. You can also remove the instance's public IP, since Tailscale doesn't need one. The VM then has no public ports at all.
-3. Confirm `docker ps` works and `systemctl status unattended-upgrades` is active.
+1. Run **oracle-inspect** with `check` (below). It should say `check OK`; anything marked `←`
+   is wrong before you even try to log in.
+2. Check that `bastion-vm` appears in your Tailscale admin console (⋯ → Disable key expiry), then run `tailscale ssh ubuntu@bastion-vm` from your Mac. Revoke the Tailscale auth key: it's readable in the instance metadata.
+3. Close public SSH. In OCI → Networking → your VCN → Security Lists, delete the ingress rule for TCP 22. You can also remove the instance's public IP, since Tailscale doesn't need one. The VM then has no public ports at all. Set the repository variable `EXPECT_PUBLIC_IP` to `no` so the daily check notices if one comes back.
+4. Confirm `docker ps` works and `systemctl status unattended-upgrades` is active.
+5. Delete the provisioner's secrets (`OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_PRIVATE_KEY`, `OCI_COMPARTMENT_ID`, `NTFY_URL`) and its API key in OCI. Keep `OCI_TENANCY_OCID`, `OCI_REGION` and `OCI_STACK_ID`: the inspector uses them.
+
+## Inspecting the VM (read-only)
+
+The **oracle-inspect** workflow (`scripts/oracle-inspect.py`) answers questions about the VM
+and the tenancy without anyone holding write access. It runs as a second OCI user that can
+only `inspect`/`read`, runs a fixed list of queries, and redacts its output, because the
+repository is public and so are its Actions logs: keys, `user_data` and Tailscale keys are
+removed, OCIDs are shortened, and public IPs and email addresses are masked. Claude can start
+it and read the result through the GitHub API, so it never needs Oracle credentials.
+
+| Query | Shows |
+| --- | --- |
+| `check` | state, shape, image, public IP, SSH key fingerprint, cloud-init, each marked `←` if it differs from what this guide expects; red run on a mismatch |
+| `instance`, `image`, `network` | details, the boot image's OS, private/public IP and the subnet's ingress rules |
+| `ssh-key` | fingerprints only (compare with `ssh-keygen -lf ~/.ssh/bastion_vm.pub`) |
+| `cloud-init` | whether `user_data` is set, its size and SHA-256 (compare with `shasum -a 256` of your local file), and whether the Tailscale placeholder was left in |
+| `agent` | Oracle Cloud Agent plugins and their status |
+| `metrics` | 7-day p95 CPU and memory against the 20% idle-reclaim line, and network per day |
+| `limits` | A1 OCPUs and memory used vs. the tenancy limit |
+| `stack`, `job-log` | recent Resource Manager jobs, and one job's log (give its OCID) with a summary line |
+| `audit` | write operations in the tenancy (who, what, when) over the last N hours |
+| `cloud-guard` | open Cloud Guard problems |
+| `budget`, `backups` | budgets and spend; boot volume backups |
+| `watch` | `check` + `metrics` + `audit` + `cloud-guard`. Runs daily at 08:41 New York time; a red run means a mismatch, an idle VM or a high-risk Cloud Guard problem |
+| `all` | everything except `job-log` |
+
+Run it: Actions → **oracle-inspect** → Run workflow → pick a query. The result is in the run's
+log and its summary page.
+
+### Setup (about 5 minutes)
+
+1. Identity & Security → Domains → Default → Groups → create `BastionInspector`; Users →
+   create `bastion-inspector` (no console password) and add it to the group.
+2. Policies → create `bastion-inspector-read` in the root compartment:
+
+   ```
+   Allow group 'Default'/'BastionInspector' to read instance-family in tenancy
+   Allow group 'Default'/'BastionInspector' to read instance-agent-plugins in tenancy
+   Allow group 'Default'/'BastionInspector' to read virtual-network-family in tenancy
+   Allow group 'Default'/'BastionInspector' to read volume-family in tenancy
+   Allow group 'Default'/'BastionInspector' to read orm-family in tenancy
+   Allow group 'Default'/'BastionInspector' to read metrics in tenancy
+   Allow group 'Default'/'BastionInspector' to read resource-availability in tenancy
+   Allow group 'Default'/'BastionInspector' to read audit-events in tenancy
+   Allow group 'Default'/'BastionInspector' to read cloud-guard-family in tenancy
+   Allow group 'Default'/'BastionInspector' to read usage-budgets in tenancy
+   ```
+
+   `read instance-family` includes instance metadata, so this user can read `user_data`.
+   That's why the Tailscale key must be revoked once the VM joins, and why the script never
+   prints it.
+3. Open the user → API keys → Add API key → Generate API key pair; download the private key.
+4. GitHub → Settings → Secrets and variables → Actions:
+
+   | Secret | Value |
+   | --- | --- |
+   | `OCI_INSPECT_USER_OCID` | `user=` from the configuration preview |
+   | `OCI_INSPECT_FINGERPRINT` | `fingerprint=` |
+   | `OCI_INSPECT_PRIVATE_KEY` | the whole `.pem` file |
+   | `OCI_TENANCY_OCID`, `OCI_REGION`, `OCI_STACK_ID` | already set for provisioning |
+
+   Optional **variables** (Variables tab) for `check`: `EXPECT_SSH_FP` (the `SHA256:…` from
+   `ssh-keygen -lf ~/.ssh/bastion_vm.pub`), `EXPECT_PUBLIC_IP` (`yes` while provisioning, `no`
+   after the lockdown) and `EXPECT_CLOUD_INIT` (`yes`).
+5. Delete the downloaded `.pem`, then run the workflow once with `check`.
+
+If a query says the policy needs a line, it names the line to add. Until these secrets
+exist, the daily run just leaves a notice.
 
 ## Idle reclamation
 
