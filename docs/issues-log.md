@@ -9,7 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
-| 42 | 2026-11-21 | Tooling | oracle-inspect's first live run: audit crashed, console metric reads listed as writes, limits failed | fixed |
+| 42 | 2026-11-21 | Tooling | oracle-inspect's first live runs: audit crashed, metric reads listed as writes, limits and budget failed | fixed |
 | 41 | 2026-11-21 | Install | Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP | fixed |
 | 40 | 2026-11-12 | Install | GitHub ran the Oracle retry workflow once in 5 hours instead of 10 times | fixed |
 | 39 | 2026-11-12 | Install | Phoenix asked for a login and silently dropped traces | fixed |
@@ -54,7 +54,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 ---
 
-## 42. oracle-inspect's first live run: audit crashed, console metric reads listed as writes, limits failed
+## 42. oracle-inspect's first live runs: audit crashed, metric reads listed as writes, limits and budget failed
 
 **Symptom.** The first `all` run (run 1, Nov 21) stopped with `TypeError: unsupported format
 string passed to NoneType.__format__` in the audit section. Before the crash, 60 audit lines
@@ -74,9 +74,17 @@ VM's availability domain, or checks every one when there's no VM. Error messages
 `Warning:` lines and prefer the line with the error code, and the workflow sets
 `SUPPRESS_LABEL_WARNING`.
 
+The second run (run 2) showed two more: `budget` said only `oci exited 2`, because the CLI
+spells the command `budgets budget budget list` and its usage error went unshown; and
+`cloud-guard` showed only `ServiceError:`, because the CLI prints the error's JSON body on
+the following lines. The budget command is fixed, errors now include stdout when stderr is
+empty, and a `ServiceError` is shown as `code (status): message`. Every command and flag
+the script uses was then checked against `--help` of the pinned oci-cli 3.96.2.
+
 Test: `test_audit_handles_missing_fields_and_drops_reads_sent_as_post`,
 `test_limits_without_a_vm_checks_every_availability_domain`,
-`test_errors_show_the_real_message_not_the_cli_key_warning`.
+`test_errors_show_the_real_message_not_the_cli_key_warning`,
+`test_service_errors_show_code_and_message`, `test_budget_uses_the_cli_command_that_exists`.
 
 ## 41. Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP
 

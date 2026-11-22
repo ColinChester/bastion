@@ -258,10 +258,8 @@ def test_only_read_operations_are_ever_called(run):
     code, out, calls = run("all", responses(instance(), extra=extra),
                            OCI_STACK_ID="ocid1.ormstack.x")
     assert code == 0, out
-    verbs = {line.split()[2] if line.startswith(("compute", "network", "resource-manager", "iam",
-                                                 "instance-agent", "audit", "cloud-guard",
-                                                 "budgets", "bv", "monitoring", "limits"))
-             else line for line in calls.splitlines()}
+    # the operation is the last word before the first --flag
+    verbs = {[w for w in line.split("--")[0].split()][-1] for line in calls.splitlines()}
     allowed = {"list", "get", "list-vnics", "summarize-metrics-data"}
     assert verbs <= allowed, verbs - allowed
 
@@ -356,3 +354,23 @@ def test_errors_show_the_real_message_not_the_cli_key_warning(run):
     assert code == 2
     assert "NotAuthorizedOrNotFound" in out and "read usage-budgets" in out
     assert "OCI_API_KEY" not in out
+
+
+def test_service_errors_show_code_and_message(run):
+    """The CLI prints `ServiceError:` then a JSON body over several lines; the second live run
+    showed only `ServiceError:`."""
+    stderr = ('ServiceError:\n{\n    "client_version": "Oracle-PythonSDK",\n'
+              '    "code": "NotAuthorizedOrNotFound",\n'
+              '    "message": "Cloud Guard is not enabled for this tenancy",\n'
+              '    "status": 404\n}\n')
+    code, out, _ = run("cloud-guard", [[["cloud-guard"], {"stderr": stderr}]])
+    assert code == 2
+    assert "NotAuthorizedOrNotFound (404): Cloud Guard is not enabled for this tenancy" in out
+
+
+def test_budget_uses_the_cli_command_that_exists(run):
+    """oci-cli spells it `budgets budget budget list`; `budgets budget list` exits 2."""
+    code, out, calls = run("budget", [[["budgets", "budget", "budget", "list"],
+                                       {"stdout": {"data": []}}]])
+    assert code == 0, out
+    assert calls.startswith("budgets budget budget list")

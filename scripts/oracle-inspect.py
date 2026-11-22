@@ -112,7 +112,8 @@ def oci(*args: str) -> dict:
     """Run one OCI CLI command and return its JSON. Only the fixed calls below use this."""
     proc = subprocess.run([OCI, *args], capture_output=True, text=True, timeout=300)
     if proc.returncode != 0:
-        raise OciError(proc.stderr.strip() or f"oci exited {proc.returncode}")
+        msg = "\n".join(x for x in (proc.stderr.strip(), proc.stdout.strip()) if x)
+        raise OciError(msg or f"oci exited {proc.returncode}")
     out = proc.stdout.strip()
     return json.loads(out) if out else {}
 
@@ -468,7 +469,7 @@ def q_cloud_guard() -> int:
 
 
 def q_budget() -> int:
-    data = oci("budgets", "budget", "list", "--compartment-id", compartment(),
+    data = oci("budgets", "budget", "budget", "list", "--compartment-id", compartment(),
                "--target-type", "ALL", "--all").get("data") or []
     for b in data:
         say(f"budget      {b.get('display-name')}: spent {b.get('actual-spend')} of "
@@ -606,10 +607,23 @@ ALL = ["instance", "image", "network", "ssh-key", "cloud-init", "agent", "metric
        "stack", "audit", "cloud-guard", "budget", "backups"]
 
 
+def service_error(text: str) -> str | None:
+    """`code: message` from the CLI's multi-line `ServiceError: {json}` output."""
+    start = text.find("{", text.find("ServiceError"))
+    if "ServiceError" not in text or start < 0:
+        return None
+    try:
+        body, _ = json.JSONDecoder().raw_decode(text[start:])
+    except ValueError:
+        return None
+    return f"{body.get('code', '?')} ({body.get('status', '?')}): {body.get('message', '')}"
+
+
 def explain(name: str, err: Exception) -> str:
     text = str(err)
+    parsed = service_error(text)
     lines = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith("Warning:")]
-    first = (next((ln for ln in lines if "Error" in ln or "code" in ln), None)
+    first = (parsed or next((ln for ln in lines if "Error" in ln or "code" in ln), None)
              or (lines[0] if lines else text))[:300]
     if "NotAuthorizedOrNotFound" in text or '"status": 404' in text:
         hint = POLICY.get(name)
