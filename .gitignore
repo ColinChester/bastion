@@ -13,6 +13,8 @@ reports/
 .DS_Store
 # local copies of cloud-init with a real Tailscale key
 deploy/vm/*.local.yaml
+# downloaded Resource Manager stack config/state (contains the Tailscale key)
+deploy/vm/stack.local/
 
 # Phase 2 secrets
 deploy/.env
