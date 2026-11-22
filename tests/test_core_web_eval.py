@@ -97,7 +97,9 @@ def test_eval_runs_without_acking_saving_or_spending_the_ledger(cfg, tmp_path):
     cases, _ = run_eval(settings=settings, edge=edge, labels=labels, days=2,
                         model=ScriptedClient(standard_script(
                             agent_final=finding_call("benign", 0.95,
-                                                     benign_basis="os_component"))))
+                                                     benign_basis="developer_toolchain"),
+                            warden=decision_call("benign", benign_basis="developer_toolchain",
+                                                 notify=False))))
     assert cases[0].grade == "MISS"
 
 

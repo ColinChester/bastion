@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 46 | 2026-11-21 | Agents | Prompt review: injection-forgeable delimiters, stale "observe-only" Warden, high-rule benigns closing unseen, an inconclusive token theft | fixed |
 | 45 | 2026-11-21 | Detection | OrbStack's docker CLI tripped the credential rule 1,904 times a day; keychain reads of the gh token from an unknown parent | mitigated |
 | 44 | 2026-11-21 | Doctor | `doctor` warned "no ntfy topic configured" when bastiond pushes were off on purpose | fixed |
 | 43 | 2026-11-21 | CLI | `bastion status` said "learning day: 22 of 14" after the baseline ended | fixed |
@@ -56,6 +57,47 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 46. Prompt review: forgeable delimiters, stale "observe-only" Warden, high-rule benigns closing unseen, an inconclusive token theft
+
+**Symptom.** A review of the agent and Warden prompts against 40 synthetic cases (then 51)
+found:
+- the analyst called the Nov 21 `bash → security find-generic-password -s gh:github.com`
+  read *inconclusive* (0.40), not suspicious;
+- Warden told the user "nothing was blocked (observe-only mode)" in 3 of 9 summaries,
+  which will be false once autonomy is on;
+- `untrusted(...)` passed `</untrusted_detection>` inside a command line through
+  unchanged, so recorded text could close the data block and pose as instructions;
+- a confident benign finding (≥ 0.75) closed without Warden even on high-severity rules,
+  so one misled analyst could silence credential theft;
+- no rule tied "Apple" or "signed" to recorded signing fields, and nothing calibrated
+  malicious against the 0.80 automatic-containment line.
+During the loop, two more: the first summary filter treated any `sudo ` as a command (it
+would have discarded a correct "a shell started by sudo…" summary), and a rule against
+reading other programs' secrets first caught Safari's own import service.
+
+**Cause.** The prompts were written for Phase 2 (observe-only) and tested on real
+detections only, which contain no attacks on the models themselves.
+
+**Fix.** Prompts rewritten (see `docs/architecture.md` and `docs/prompt-eval.md`).
+In code: `<`/`>` JSON-escaped inside untrusted data; `benign_basis` checked against the
+detection's signing data; links stripped and command-bearing summaries replaced; Warden
+always reviews high and critical rules. A synthetic case set and
+`bastion-core eval --synthetic` were added. Two consecutive full runs passed 51/51.
+
+An independent review of the guard code then found, and these were fixed before commit:
+headlines (the lock-screen text) skipped the link/command check; `/System/Volumes/Data/…`
+and `/System/../…` passed as Apple paths; a high-rule benign still closed when Warden
+couldn't run (spend cap, invalid replies), which now becomes suspicious; the command filter
+missed `sh -c`, `bash <(curl …)`, `python3 -c`, `| /bin/sh`, `.command` files and
+fullwidth or zero-width look-alikes (text is NFKC-normalised first); the withheld-summary
+text pointed the user at the unfiltered reasoning; validation errors echoed model input
+unwrapped. Kept as a documented limit: a `developer_toolchain` basis can't be checked
+against signing data, since Homebrew and npm binaries are unsigned.
+
+Test: `tests/test_prompt_hardening.py` (delimiters, summaries and headlines, look-alikes,
+basis checks and path tricks, Warden unavailable on a high rule, prompt size, case set,
+replay through the real agent loop), `test_high_severity_benign_always_gets_a_second_model`.
 
 ## 45. OrbStack's docker CLI tripped the credential rule 1,904 times a day; gh token read from an unknown parent
 

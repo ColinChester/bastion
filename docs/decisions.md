@@ -110,3 +110,37 @@ and resumes cleanly if Bastion was wrong.
 executor is the right end state and is scheduled with the Phase 4 move, when the
 detector's inputs change anyway.
 
+## Prompt review (Nov 21)
+
+**Code first, prompt for the rest.** Every rule a check can decide moved into code:
+escaped data delimiters, basis-versus-signing checks, summary hygiene, Warden review for
+every high or critical rule. The prompts keep only judgment calls: recognising injected
+text, weighing identity when signing data is incomplete, and calibrating verdicts.
+
+**State the stakes.** Both prompts now say what a verdict *does*: malicious at 0.80 can
+contain automatically, suspicious asks first, a confident benign on a low or medium rule
+closes unseen. The old Warden line "observe-only mode" was removed; the system, not the
+model, reports what was contained.
+
+**Identity only from recorded fields.** "Apple", "signed" or "approved" in a name, flag,
+label or message is never identity. Missing signing data is unknown, and "no records"
+means new, not safe.
+
+**Malicious means two separate events.** Two traits of one event (a masquerading name and
+what it ran) stay suspicious. This keeps automatic containment for real chains and off
+single events and Bastion's own trigger tests.
+
+**Injection is evidence, scoped.** Text addressing Bastion or an AI and asking for a
+verdict, action, silence or user steps counts against its carrier. A prompt passed to the
+user's own AI tool is that tool's input, so Claude Code runs aren't flagged for it.
+
+**Signature is the publisher, not the intent.** A signed app reading another program's
+secrets isn't explained by its signature, unless importing, syncing or backing up that
+data is that exact software's documented job (Safari's import service, a backup tool).
+
+**Cost.** Prompts grew from about 840 to 1,300 tokens (analysts) and 370 to 670 (Warden),
+about 5% more per incident. Prompt caching wasn't added: the analyst prefix is near the
+cache minimum and Warden runs once per incident, so savings would be small.
+
+Details and the run history: [prompt-eval.md](prompt-eval.md).
+

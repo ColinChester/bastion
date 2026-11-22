@@ -134,6 +134,18 @@ def cmd_check(args, s: Settings) -> int:
 def cmd_eval(args, s: Settings) -> int:
     from bastion.core.evaluate import load_labels, report, run_eval
 
+    if args.synthetic:
+        from bastion.core.synthetic import load_cases, run_synthetic, synthetic_report
+
+        results = run_synthetic(settings=s, model=_model(),
+                                cases=load_cases(Path(args.synthetic_cases)))
+        text = synthetic_report(results, s)
+        out = s.data_dir / f"eval-synthetic-{time.strftime('%Y%m%d-%H%M')}.md"
+        out.write_text(text)
+        print(text)
+        print(f"Saved to {out}")
+        return 0 if all(r["ok"] for r in results) else 1
+
     labels = load_labels(Path(args.labels))
     cases, uncovered = run_eval(settings=s, model=_model(),
                                 edge=EdgeClient(s.edge_url, s.edge_token), labels=labels,
@@ -177,6 +189,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--labels", default="tests/labeled_events/phase1-labels.yml")
     p.add_argument("--days", type=int, default=21)
     p.add_argument("--per-label", type=int, default=2)
+    p.add_argument("--synthetic", action="store_true",
+                   help="run the synthetic prompt cases (injection, spoofing, known FPs) "
+                        "instead of the labeled detections; needs no telemetry")
+    p.add_argument("--synthetic-cases", default="tests/labeled_events/synthetic-cases.yml")
     p = sub.add_parser("digest", help="print the daily digest")
     p.add_argument("--send", action="store_true")
     args = ap.parse_args(argv)

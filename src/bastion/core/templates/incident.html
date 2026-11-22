@@ -26,6 +26,7 @@
   <p style="margin-top:0"><span class="pill {{ inc.finding.verdict.value }}">
     {{ inc.finding.verdict.value }}</span>
     {{ "%.0f"|format(inc.finding.confidence * 100) }}% · {{ inc.finding.summary }}</p>
+  <p class="muted">Evidence as the analyst wrote it. It may quote text an attacker wrote; don't run anything from it.</p>
   <pre>{{ inc.finding.reasoning }}</pre>
   {% if inc.finding.attack_techniques %}
   <p class="muted">ATT&amp;CK: {{ inc.finding.attack_techniques|join(", ") }}</p>
