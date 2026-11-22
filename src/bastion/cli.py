@@ -46,6 +46,14 @@ def _write_user_file(path: Path, text: str) -> None:
             os.chown(path, int(uid), int(gid))
 
 
+def learning_line(day: int, days: int) -> str:
+    """The first-seen baseline learns for `days` days; after that, say so instead of
+    printing "day 22 of 14"."""
+    if day <= days:
+        return f"learning day: {day} of {days}"
+    return f"learning: done ({days}-day baseline complete; installed {day - 1} days ago)"
+
+
 def cmd_status(args, cfg) -> int:
     from bastion.daemon import HEARTBEAT_KEY, learning_day, sensor_health
 
@@ -53,7 +61,7 @@ def cmd_status(args, cfg) -> int:
     hb = store.get_state(HEARTBEAT_KEY)
     age = (time.time() * 1000 - int(hb)) / 1000 if hb else None
     print(f"bastiond heartbeat: {f'{age:.0f} s ago' if age is not None else 'never'}")
-    print(f"learning day: {learning_day(store)} of {cfg.baseline.learning_days}")
+    print(learning_line(learning_day(store), cfg.baseline.learning_days))
     for k, v in sensor_health(cfg, store).items():
         print(f"sensor {k}: {v}")
     day = int(time.time() * 1000) - 86_400_000

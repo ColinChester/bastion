@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 43 | 2026-11-21 | CLI | `bastion status` said "learning day: 22 of 14" after the baseline ended | fixed |
 | 42 | 2026-11-21 | Tooling | oracle-inspect's first live runs: audit crashed, metric reads listed as writes, limits and budget failed | fixed |
 | 41 | 2026-11-21 | Install | Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP | fixed |
 | 40 | 2026-11-12 | Install | GitHub ran the Oracle retry workflow once in 5 hours instead of 10 times | fixed |
@@ -53,6 +54,18 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 43. `bastion status` said "learning day: 22 of 14" after the baseline ended
+
+**Symptom.** On day 22 after install, `sudo bastion status` printed `learning day: 22 of 14`.
+
+**Cause.** The status line printed the raw day count against the 14-day first-seen baseline
+with no case for "finished". The daily summary already hid the line after day 14.
+
+**Fix.** `status` now prints `learning: done (14-day baseline complete; installed N days ago)`
+after the baseline. Cosmetic: nothing used the number beyond display.
+
+Test: `test_status_learning_line_after_the_baseline`.
 
 ## 42. oracle-inspect's first live runs: audit crashed, metric reads listed as writes, limits and budget failed
 

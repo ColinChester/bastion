@@ -115,3 +115,13 @@ def test_cli_replay_fixture(tmp_path, capsys):
 def test_cli_rules(capsys):
     assert cli_main(["rules"]) == 0
     assert "15 rules loaded, 0 errors" in capsys.readouterr().out
+
+
+def test_status_learning_line_after_the_baseline():
+    """`bastion status` printed "learning day: 22 of 14" once the baseline was over."""
+    from bastion.cli import learning_line
+
+    assert learning_line(3, 14) == "learning day: 3 of 14"
+    assert learning_line(14, 14) == "learning day: 14 of 14"
+    assert learning_line(22, 14) == (
+        "learning: done (14-day baseline complete; installed 21 days ago)")
