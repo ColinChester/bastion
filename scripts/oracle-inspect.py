@@ -368,8 +368,7 @@ def q_limits() -> int:
 
 
 def q_stack() -> int:
-    data = oci("resource-manager", "job", "list", "--stack-id", env("OCI_STACK_ID"),
-               "--sort-by", "TIMECREATED", "--sort-order", "DESC", "--limit", "10").get("data")
+    data = stack_jobs()
     for job in data or []:
         say(f"stack job   {(job.get('time-created') or '?')[:16]}  "
             f"{job.get('operation') or '?':<8} "
@@ -383,10 +382,29 @@ JOB_ID = re.compile(r"^ocid1\.ormjob\.[A-Za-z0-9._-]+$")
 SUMMARY_LINE = re.compile(r"(Plan: .*|Apply complete!.*|No changes\..*|Error: .*)")
 
 
+LATEST = {"latest": None, "latest-apply": "APPLY", "latest-plan": "PLAN"}
+
+
+def stack_jobs() -> list[dict]:
+    return oci("resource-manager", "job", "list", "--stack-id", env("OCI_STACK_ID"),
+               "--sort-by", "TIMECREATED", "--sort-order", "DESC",
+               "--limit", "10").get("data") or []
+
+
 def q_job_log() -> int:
-    job_id = env("JOB_ID").strip()
+    job_id = (os.environ.get("JOB_ID") or "latest").strip()
+    if job_id in LATEST:
+        # stack output shortens OCIDs for the public log, so "latest…" is how a job is named
+        op = LATEST[job_id]
+        jobs = [j for j in stack_jobs() if op is None or j.get("operation") == op]
+        if not jobs:
+            raise OciError(f"no {job_id.removeprefix('latest-') if op else ''} job on the stack")
+        job = jobs[0]
+        say(f"job         {job.get('operation')} {job.get('lifecycle-state')}  "
+            f"{(job.get('time-created') or '?')[:16]}  {job.get('id')}")
+        job_id = job["id"]
     if not JOB_ID.match(job_id):
-        raise OciError("JOB_ID must be a Resource Manager job OCID (ocid1.ormjob…)")
+        raise OciError("JOB_ID must be latest, latest-apply, latest-plan or a job OCID")
     text = oci("resource-manager", "job", "get-job-logs-content", "--job-id", job_id).get("data")
     lines = (text or "").splitlines()
     summary = [m[0] for line in lines if (m := SUMMARY_LINE.search(line))]
@@ -587,10 +605,16 @@ def q_watch() -> int:
     except NoInstance as e:
         say(f"watch       no instance named {e} yet; skipping the VM checks")
     say()
-    problems += audit_report()
-    say()
-    problems += cloud_guard_report()
-    say()
+    for section, report in (("audit", audit_report), ("cloud-guard", cloud_guard_report)):
+        try:
+            problems += report()
+        except OciError as e:
+            if section == "cloud-guard" and "404" in str(e):
+                say("cloud-guard not enabled in this tenancy (Identity & Security → Cloud Guard)")
+            else:
+                say(f"{section:<11} error: {explain(section, e)}")
+                problems.append(f"{section} query failed")
+        say()
     for p in problems:
         say(f"problem     {p}")
     say("watch       OK" if not problems else f"watch       {len(problems)} problem(s)")
@@ -625,6 +649,9 @@ def explain(name: str, err: Exception) -> str:
     lines = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith("Warning:")]
     first = (parsed or next((ln for ln in lines if "Error" in ln or "code" in ln), None)
              or (lines[0] if lines else text))[:300]
+    if name == "cloud-guard" and "404" in text:
+        return (f"{first}  (Cloud Guard is probably not enabled: Identity & Security → Cloud "
+                f"Guard → Enable. If it is, the policy needs: read cloud-guard-family)")
     if "NotAuthorizedOrNotFound" in text or '"status": 404' in text:
         hint = POLICY.get(name)
         if hint:

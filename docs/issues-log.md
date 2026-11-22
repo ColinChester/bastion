@@ -81,10 +81,17 @@ the following lines. The budget command is fixed, errors now include stdout when
 empty, and a `ServiceError` is shown as `code (status): message`. Every command and flag
 the script uses was then checked against `--help` of the pinned oci-cli 3.96.2.
 
+Two more from the same session: queuing three queries at once cancelled the middle one,
+because a concurrency group keeps only one pending run (the group is gone; runs are
+read-only). And `job-log` needed a full job OCID that `stack` deliberately shortens, so it
+now takes `latest`, `latest-apply` or `latest-plan`. A tenancy without Cloud Guard answers
+404, which `watch` now reports as a notice instead of failing every day.
+
 Test: `test_audit_handles_missing_fields_and_drops_reads_sent_as_post`,
 `test_limits_without_a_vm_checks_every_availability_domain`,
 `test_errors_show_the_real_message_not_the_cli_key_warning`,
-`test_service_errors_show_code_and_message`, `test_budget_uses_the_cli_command_that_exists`.
+`test_service_errors_show_code_and_message`, `test_budget_uses_the_cli_command_that_exists`,
+`test_job_log_latest_apply_resolves_the_newest_apply`, `test_watch_treats_cloud_guard_off_as_a_notice`.
 
 ## 41. Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP
 

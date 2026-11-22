@@ -210,7 +210,7 @@ def test_audit_shows_writes_only_and_masks_people(run):
 
 def test_job_log_rejects_anything_but_a_job_ocid(run):
     code, out, calls = run("job-log", [], JOB_ID="ocid1.ormjob.oc1; rm -rf /")
-    assert code == 2 and "must be a Resource Manager job OCID" in out
+    assert code == 2 and "must be latest, latest-apply, latest-plan or a job OCID" in out
     assert calls == ""
 
 
@@ -374,3 +374,36 @@ def test_budget_uses_the_cli_command_that_exists(run):
                                        {"stdout": {"data": []}}]])
     assert code == 0, out
     assert calls.startswith("budgets budget budget list")
+
+
+def test_job_log_latest_apply_resolves_the_newest_apply(run):
+    jobs = {"data": [
+        {"id": "ocid1.ormjob.oc1.iad.newplanjob", "operation": "PLAN",
+         "lifecycle-state": "SUCCEEDED", "time-created": "2026-11-22T01:30:00Z"},
+        {"id": "ocid1.ormjob.oc1.iad.newapplyjob", "operation": "APPLY",
+         "lifecycle-state": "FAILED", "time-created": "2026-11-22T01:24:00Z"}]}
+    log = "Error: 500-InternalError, Out of host capacity."
+    code, out, calls = run("job-log", [
+        [["resource-manager", "job", "list"], {"stdout": jobs}],
+        [["resource-manager", "job", "get-job-logs-content", "--job-id",
+          "ocid1.ormjob.oc1.iad.newapplyjob"], {"stdout": {"data": log}}]],
+        JOB_ID="latest-apply", OCI_STACK_ID="ocid1.ormstack.x")
+    assert code == 0, out
+    assert "job         APPLY FAILED" in out
+    assert "summary     Error: 500-InternalError, Out of host capacity." in out
+
+
+def test_watch_treats_cloud_guard_off_as_a_notice(run):
+    off = 'ServiceError:\n{\n "code": "NotAuthorizedOrNotFound",\n "status": 404\n}'
+    resp = [*responses(None), [["audit"], {"stdout": {"data": []}}],
+            [["cloud-guard"], {"stderr": off}]]
+    code, out, _ = run("watch", resp)
+    assert code == 0, out
+    assert "cloud-guard not enabled" in out
+
+
+def test_watch_fails_when_a_section_errors(run):
+    resp = [*responses(None), [["audit"], {"stderr": "ServiceError:\n{\"code\": \"Boom\"}"}],
+            [["cloud-guard"], {"stdout": {"data": {"items": []}}}]]
+    code, out, _ = run("watch", resp)
+    assert code == 1 and "audit query failed" in out

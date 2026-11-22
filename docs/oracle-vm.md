@@ -149,9 +149,9 @@ it and read the result through the GitHub API, so it never needs Oracle credenti
 | `agent` | Oracle Cloud Agent plugins and their status |
 | `metrics` | 7-day p95 CPU and memory against the 20% idle-reclaim line, and network per day |
 | `limits` | A1 OCPUs and memory used vs. the tenancy limit |
-| `stack`, `job-log` | recent Resource Manager jobs, and one job's log (give its OCID) with a summary line |
+| `stack`, `job-log` | recent Resource Manager jobs, and one job's log with a summary line (job: `latest`, `latest-apply`, `latest-plan` or an OCID) |
 | `audit` | write operations in the tenancy (who, what, when) over the last N hours |
-| `cloud-guard` | open Cloud Guard problems |
+| `cloud-guard` | open Cloud Guard problems (Cloud Guard must be enabled: Identity & Security → Cloud Guard; it's free) |
 | `budget`, `backups` | budgets and spend; boot volume backups |
 | `watch` | `check` + `metrics` + `audit` + `cloud-guard`. Runs daily at 08:41 New York time; a red run means a mismatch, an idle VM or a high-risk Cloud Guard problem |
 | `all` | everything except `job-log` |

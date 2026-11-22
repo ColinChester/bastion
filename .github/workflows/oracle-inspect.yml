@@ -15,8 +15,9 @@ on:
         options: [check, watch, all, instance, image, network, ssh-key, cloud-init, agent,
                   metrics, limits, stack, job-log, audit, cloud-guard, budget, backups]
       job_id:
-        description: "job-log only: the stack job OCID (ocid1.ormjob…)"
+        description: "job-log only: latest, latest-apply, latest-plan, or a job OCID"
         required: false
+        default: latest
       audit_hours:
         description: "audit only: how many hours back (1-336)"
         required: false
@@ -27,9 +28,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: oracle-inspect
-  cancel-in-progress: false
+# No concurrency group: runs are read-only, and a group keeps only one pending run, so
+# queuing several queries at once silently cancelled the middle ones.
 
 jobs:
   inspect:
