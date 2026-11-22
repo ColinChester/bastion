@@ -80,6 +80,11 @@ def build_report(store: Store, days: int = 7, now_ms: int | None = None) -> str:
                 i["finding"], "actor.process.cmd_line")
             if cmd and s not in samples:
                 samples[s] = cmd[:300].replace("`", "'")
+                parent_cmd = (ocsf.get(i["finding"], "actor.process.cmd_line")
+                              if ocsf.get(i["finding"], "process.cmd_line") else None)
+                if parent_cmd:
+                    # which script or app: a bare `/bin/bash` parent says nothing (issue 45)
+                    samples[s] += "`\n  - parent: `" + parent_cmd[:300].replace("`", "'")
         for s, n in subjects.most_common(25):
             if _is_trigger_test(s + samples.get(s, "")):
                 out.append(f"- [ ] benign  [x] real  — `{s}` ×{n} (trigger test)")

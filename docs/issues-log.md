@@ -79,6 +79,11 @@ command from any other parent is what a token stealer runs. `bastion report` now
 `parent => process` for process rules, so the parent can be identified before deciding.
 Status stays "mitigated" until the parent is known.
 
+Follow-up the same evening: the parent was `/bin/bash`. That is not bash exec-ing into `gh`
+(the process cache keeps the later exec for a PID), so a bash process ran `security`
+itself. The report now also prints the parent's command line under each sample, which
+names the script or app.
+
 Test: `test_orbstack_docker_reading_its_config_is_not_a_credential_theft`,
 `test_gh_token_read_needs_gh_as_the_parent`, `test_report_shows_the_parent_of_a_process_rule`.
 

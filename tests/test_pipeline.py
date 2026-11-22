@@ -133,6 +133,8 @@ def test_report_shows_the_parent_of_a_process_rule(cfg, store):
     pipe = Pipeline(cfg, store)
     pipe.handle(RawRecord("osquery", oq("process_events", exec_cols(
         "/usr/bin/security", "security find-generic-password -s gh:github.com -wa colin",
-        platform=1, parent_path="/Applications/Some.app/Contents/MacOS/Some"))))
+        platform=1, parent_path="/bin/bash",
+        parent_cmdline="/bin/bash /Users/colin/bin/sync-repos.sh"))))
     report = build_report(store, days=7)
-    assert "/Applications/Some.app/Contents/MacOS/Some => /usr/bin/security" in report
+    assert "/bin/bash => /usr/bin/security" in report
+    assert "  - parent: `/bin/bash /Users/colin/bin/sync-repos.sh`" in report
