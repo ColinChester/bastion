@@ -125,3 +125,14 @@ def test_status_learning_line_after_the_baseline():
     assert learning_line(14, 14) == "learning day: 14 of 14"
     assert learning_line(22, 14) == (
         "learning: done (14-day baseline complete; installed 21 days ago)")
+
+
+def test_report_shows_the_parent_of_a_process_rule(cfg, store):
+    """Issue 45: the keychain rule's subject was just `/usr/bin/security`, which can't tell
+    the GitHub CLI's own token read from anything else reading it."""
+    pipe = Pipeline(cfg, store)
+    pipe.handle(RawRecord("osquery", oq("process_events", exec_cols(
+        "/usr/bin/security", "security find-generic-password -s gh:github.com -wa colin",
+        platform=1, parent_path="/Applications/Some.app/Contents/MacOS/Some"))))
+    report = build_report(store, days=7)
+    assert "/Applications/Some.app/Contents/MacOS/Some => /usr/bin/security" in report

@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 45 | 2026-11-21 | Detection | OrbStack's docker CLI tripped the credential rule 1,904 times a day; keychain reads of the gh token from an unknown parent | mitigated |
 | 44 | 2026-11-21 | Doctor | `doctor` warned "no ntfy topic configured" when bastiond pushes were off on purpose | fixed |
 | 43 | 2026-11-21 | CLI | `bastion status` said "learning day: 22 of 14" after the baseline ended | fixed |
 | 42 | 2026-11-21 | Tooling | oracle-inspect's first live runs: audit crashed, metric reads listed as writes, limits and budget failed | fixed |
@@ -55,6 +56,31 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 45. OrbStack's docker CLI tripped the credential rule 1,904 times a day; gh token read from an unknown parent
+
+**Symptom.** Day 11 of the Phase 3 shadow period: `Credential Store Opened by an Unexpected
+Process` had one detection with 1,904 hits in 24 h, all
+`/Applications/OrbStack.app/Contents/MacOS/xbin/docker-tools -> ~/.docker/config.json`
+(sample: `docker context ls --format {{json .}}`). Separately, `Keychain Secrets Read With
+the security CLI` fired 3 times on `security find-generic-password -s gh:github.com -wa
+<user>`, the GitHub CLI's own token read, which the rule filters only when the parent is `gh`.
+
+**Cause.** OrbStack ships its docker CLI as one multi-call binary named `docker-tools`, so
+the rule's `Image|endswith: '/docker'` filter never matched it; the Bastion stack runs in
+OrbStack, and its tooling polls `docker context ls`. For the keychain hits, something other
+than `gh` read the gh token. The review report showed only `/usr/bin/security` as the
+subject, so the parent couldn't be seen.
+
+**Fix.** `filter_orbstack_docker`: images under `/Applications/OrbStack.app/Contents/MacOS/`
+reading a path ending `/.docker/config.json`, and nothing else, so OrbStack opening an SSH
+key or browser cookies still fires. The keychain rule is unchanged on purpose: the same
+command from any other parent is what a token stealer runs. `bastion report` now shows
+`parent => process` for process rules, so the parent can be identified before deciding.
+Status stays "mitigated" until the parent is known.
+
+Test: `test_orbstack_docker_reading_its_config_is_not_a_credential_theft`,
+`test_gh_token_read_needs_gh_as_the_parent`, `test_report_shows_the_parent_of_a_process_rule`.
 
 ## 44. `doctor` warned "no ntfy topic configured" when bastiond pushes were off on purpose
 

@@ -129,3 +129,29 @@ def test_no_cross_category_matches():
     file_ev = fs("/Users/colin/Downloads/x")
     assert not fires("Unsigned or Ad-hoc Signed Binary Run From a Download Folder", file_ev)
     assert not fires("Shell Startup File Modified", ex("/Users/colin/.zshrc"))
+
+
+ORBSTACK_DOCKER = "/Applications/OrbStack.app/Contents/MacOS/xbin/docker-tools"
+
+
+def test_orbstack_docker_reading_its_config_is_not_a_credential_theft():
+    """1,904 hits in a day from `docker context ls` under OrbStack (issue 45)."""
+    title = "Credential Store Opened by an Unexpected Process"
+    assert not fires(title, fe("/Users/colin/.docker/config.json", "open", proc=ORBSTACK_DOCKER))
+    # the filter is only for that file, and only for OrbStack's own bundle
+    assert fires(title, fe("/Users/colin/.ssh/id_ed25519", "open", proc=ORBSTACK_DOCKER))
+    assert fires(title, fe("/Users/colin/Library/Application Support/Google/Chrome/Default/Cookies",
+                           "open", proc=ORBSTACK_DOCKER))
+    assert fires(title, fe("/Users/colin/.docker/config.json", "open",
+                           proc="/Users/colin/Downloads/OrbStack.app/Contents/MacOS/xbin/docker-tools"))
+
+
+def test_gh_token_read_needs_gh_as_the_parent():
+    """The GitHub CLI's own token read is filtered only when gh is the parent: the same
+    command from anything else is what a token stealer would run (issue 45)."""
+    title = "Keychain Secrets Read With the security CLI"
+    cmd = "/usr/bin/security find-generic-password -s gh:github.com -wa ColinChester"
+    assert not fires(title, ex("/usr/bin/security", cmd, platform=1,
+                               parent_path="/opt/homebrew/Cellar/gh/2.83.0/bin/gh"))
+    assert fires(title, ex("/usr/bin/security", cmd, platform=1,
+                           parent_path="/Users/colin/Downloads/helper"))

@@ -18,6 +18,11 @@ from bastion.store import Store
 
 def _subject_line(f: dict) -> str:
     proc = ocsf.get(f, "process.file.path") or ocsf.get(f, "actor.process.file.path") or ""
+    parent = ocsf.get(f, "actor.process.file.path") if ocsf.get(f, "process.file.path") else ""
+    if parent and proc:
+        # For process rules the parent is often the deciding fact (which program ran
+        # `security`?), so show it: issue 45.
+        proc = f"{parent} => {proc}"
     target = ocsf.get(f, "file.path") or ""
     dst = ocsf.get(f, "dst_endpoint.ip")
     port = ocsf.get(f, "src_endpoint.port")
