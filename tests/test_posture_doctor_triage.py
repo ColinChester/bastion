@@ -121,3 +121,17 @@ def test_whoowns_reports_contents_and_verdict(tmp_path):
     assert "app.log" in md
     assert "abcdefghijk123" not in md  # log tail is redacted
     assert "BrowserLockAgent" in md.split("## Verdict")[1]
+
+
+def test_doctor_notify_off_is_not_a_warning(cfg):
+    """setup-phase2.sh sets notify.mode = "off" on purpose; doctor used to call that
+    "no ntfy topic configured" even with a topic set (issue 44)."""
+    from bastion.doctor import _notify_check
+
+    cfg.notify.ntfy_topic = "bastion-abc"
+    cfg.notify.mode = "off"
+    assert _notify_check(cfg).status == "ok"
+    cfg.notify.mode = "daily"
+    assert _notify_check(cfg).status == "ok"
+    cfg.notify.ntfy_topic = ""
+    assert _notify_check(cfg).status == "warn"

@@ -105,13 +105,20 @@ def check_all(cfg: Config, runner: Runner | None = None, now: float | None = Non
     res.extend(_ingest_checks(cfg, now))
     res.extend(_executor_checks(cfg))
 
-    # notifications
-    if cfg.notify.ntfy_topic and cfg.notify.mode != "off":
-        res.append(Health("notify", "ok", f"ntfy topic set, mode {cfg.notify.mode}"))
-    else:
-        res.append(Health("notify", "warn", "no ntfy topic configured",
-                          "Set notify.ntfy_topic in config.toml and run `bastion test-push`"))
+    res.append(_notify_check(cfg))
     return res
+
+
+def _notify_check(cfg: Config) -> Health:
+    """bastiond's own pushes. `mode = "off"` is the normal Phase 2+ setting: setup-phase2.sh
+    turns them off because the orchestrator's digest replaces bastiond's daily summary."""
+    if cfg.notify.mode == "off":
+        return Health("notify", "ok", "bastiond pushes off (the orchestrator sends alerts "
+                      "and the digest)")
+    if not cfg.notify.ntfy_topic:
+        return Health("notify", "warn", "no ntfy topic configured",
+                      "Set notify.ntfy_topic in config.toml and run `bastion test-push`")
+    return Health("notify", "ok", f"ntfy topic set, mode {cfg.notify.mode}")
 
 
 def _ingest_checks(cfg: Config, now: float) -> list[Health]:

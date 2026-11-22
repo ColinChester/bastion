@@ -9,6 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 44 | 2026-11-21 | Doctor | `doctor` warned "no ntfy topic configured" when bastiond pushes were off on purpose | fixed |
 | 43 | 2026-11-21 | CLI | `bastion status` said "learning day: 22 of 14" after the baseline ended | fixed |
 | 42 | 2026-11-21 | Tooling | oracle-inspect's first live runs: audit crashed, metric reads listed as writes, limits and budget failed | fixed |
 | 41 | 2026-11-21 | Install | Oracle VM was unreachable: wrong image, size, key, no cloud-init, no public IP | fixed |
@@ -54,6 +55,23 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 44. `doctor` warned "no ntfy topic configured" when bastiond pushes were off on purpose
+
+**Symptom.** `sudo bastion doctor` showed `[WARN] notify no ntfy topic configured`, with the
+fix "Set notify.ntfy_topic in config.toml". Taken at face value (and Claude did, at first),
+that suggests pointing bastiond at the self-hosted ntfy, which would duplicate the
+orchestrator's alerts and digest.
+
+**Cause.** `setup-phase2.sh` runs `bastion enable-edge-api --quiet-bastiond-pushes`, which sets
+`notify.mode = "off"`: from Phase 2 on, the orchestrator sends the pushes and the digest. The
+doctor check treated "mode off" and "no topic" as the same case and printed the topic message
+for both.
+
+**Fix.** `mode = "off"` is now `[OK] bastiond pushes off (the orchestrator sends alerts and
+the digest)`. The warning only appears when pushes are on and the topic is empty.
+
+Test: `test_doctor_notify_off_is_not_a_warning`.
 
 ## 43. `bastion status` said "learning day: 22 of 14" after the baseline ended
 
