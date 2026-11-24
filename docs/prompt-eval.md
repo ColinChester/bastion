@@ -32,7 +32,9 @@ can't decide:
 | G6 | Inconclusive | ≤ 1, only where acceptable |
 | G7 | Size | analyst ≤ 1,500 tokens, Warden ≤ 900; cost per incident up ≤ 10% |
 
-Stop: G1–G6 on two consecutive full runs with unchanged prompts.
+Stop: G1–G6 on two consecutive full runs with unchanged prompts, and then the real-API
+run (`bastion-core eval --synthetic`) on the Mac. The API run found what the session runs
+couldn't (issue #48), so it is the deciding run.
 
 ## Cases
 
@@ -78,6 +80,8 @@ the real agent loop with the API, tools answered from the recorded results.
 | v2 | import/backup exception, narrower filter | 51 | 48 | T10, W10 malicious from two traits of one event; B6 benign without a basis |
 | v3 | "separate events", "always set benign_basis" | 51 | **51** | none |
 | v4 | unchanged | 51 | **51** | none (one keyword-match miss in a soft check) |
+| API 1 (Nov 23, Mac, real tool loop) | v4 | 51 | 47 | T1, A7, T10 summaries quoted commands (withheld by code); A6 inconclusive on empty tools. Warden lowered 5 tool-backed malicious verdicts and flagged the Backblaze backup (issue #48) |
+| v5 | summary rule with examples, empty-tools rule; Warden credits tool-attributed facts, import/backup exception | 51 | **51** | none (regression check; the API run is the judge) |
 
 In v3 and v4, every multi-stage chain (ClickFix, fake password prompt, Safari Storage
 dump, fake Apple agent, cookie thief, injected "IT script", tool-result injection, fake

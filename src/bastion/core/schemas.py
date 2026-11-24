@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 
 class Verdict(StrEnum):
@@ -55,6 +55,10 @@ class ProposedAction(BaseModel):
 
 class AgentFinding(BaseModel):
     """A domain agent's conclusion about one detection."""
+
+    # The model's own summary when `safe_summary` replaced it (for evaluation reports only;
+    # never shown to the owner, never stored).
+    _withheld_summary: str | None = PrivateAttr(default=None)
 
     verdict: Verdict
     confidence: float = Field(ge=0, le=1, description="0 to 1. Be honest; 0.5 means unsure.")

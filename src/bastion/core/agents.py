@@ -113,7 +113,8 @@ example an ad-hoc binary from Downloads that then shows a fake password prompt, 
 credential read followed by a connection). Two traits of one event (a masquerading name \
 and what it ran), one technique or injected text is suspicious.
 - inconclusive: only when the telemetry is too broken or contradictory to say what \
-happened. A secret read, security change or persistence of unknown origin is suspicious.
+happened. Tools that return no records are not broken telemetry. A secret read, security \
+change or persistence of unknown origin is suspicious.
 Confidence is your probability of being right. Give benign 0.75 or more when signing or \
 tool data verifies the identity and the behavior is that software's normal job.
 
@@ -121,9 +122,12 @@ Investigate: tools are read-only. Start with what decides the case (who launched
 what the binary is and its history); usually 1 to 4 calls; stop when another call would \
 not change the verdict. A failed tool is missing evidence, not reassurance.
 
-Write: summary in two or three plain sentences; reasoning as the evidence chain, citing \
-the field or tool behind each fact. Never put links, commands or steps for the user in \
-the summary; describe them instead ("a download piped into a shell"). Cite only event ids \
+Write: summary in two or three plain sentences for the owner; reasoning as the evidence \
+chain, citing the field or tool behind each fact (quote commands there, not in the \
+summary). The summary never contains a command, flag, pipe, link or domain, even quoted \
+as evidence: name what happened instead ("a script downloaded from the internet was run \
+in a shell", "Gatekeeper was switched off from the command line"). A summary that quotes \
+one is withheld from the owner. Cite only event ids \
 and techniques the evidence shows. Propose actions only for suspicious or malicious when \
 interrupting the user is justified, targeting the object this detection is about. \
 Secrets were already replaced with [REDACTED]. Call submit_finding exactly once."""
@@ -270,9 +274,13 @@ def run_agent(domain: str, detection: dict, *, settings: Settings, model: ModelC
                 finding.proposed_actions = [
                     a for a in finding.proposed_actions if a.action in allowed_actions
                 ] if finding.verdict in (Verdict.SUSPICIOUS, Verdict.MALICIOUS) else []
+                original = finding.summary
                 finding.summary = safe_summary(
-                    finding.summary, f"Verdict {finding.verdict.value}; the analyst's summary "
+                    original, f"Verdict {finding.verdict.value}; the analyst's summary "
                     f"{WITHHELD}. Don't run anything quoted in the evidence.")
+                if finding.summary != original:
+                    log.info("analyst summary withheld (%s)", domain)
+                    finding._withheld_summary = original
                 return finding, records
             tool = tools.get(call.name)
             if tool is None:

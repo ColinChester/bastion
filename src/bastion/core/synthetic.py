@@ -189,6 +189,10 @@ def run_synthetic(*, settings, model, cases: list[dict]) -> list[dict]:
                 r = score(case, inc.finding.model_dump(mode="json"))
                 r.update(final=inc.decision.verdict.value, cost=inc.cost_usd,
                          tools=[c.tool for c in inc.tool_calls])
+                withheld = inc.finding._withheld_summary
+                if withheld:
+                    r["checks"]["hygiene"], r["ok"] = False, False
+                    r["notes"].append(f"withheld summary: {withheld[:300]}")
             else:
                 finding = dict(case["finding"])
                 tools_used = finding.pop("tools_used", [])
@@ -199,6 +203,8 @@ def run_synthetic(*, settings, model, cases: list[dict]) -> list[dict]:
                 r = (score(case, decision.model_dump(mode="json")) if decision else
                      {"id": case["id"], "ok": False, "checks": {"valid": False},
                       "notes": errors})
+                if decision and not r["checks"].get("hygiene", True):
+                    r["notes"].append(f"unsafe summary: {decision.summary[:300]}")
                 r.update(cost=budget.spent, tools=[])
         except ModelError as exc:
             r = {"id": case["id"], "ok": False, "checks": {}, "notes": [f"error: {exc}"[:200]]}

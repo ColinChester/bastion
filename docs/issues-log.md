@@ -9,6 +9,8 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
+| 48 | 2026-11-23 | Agents | First real-API synthetic eval: 47/51 (summaries quoting commands, inconclusive on empty tools, Warden prompt gaps) | fixed, re-run pending |
+| 47 | 2026-11-23 | Detection | Keychain rule: git's gh credential helper and Claude Code's own login; parent shown as the shell, not gh | fixed |
 | 46 | 2026-11-21 | Agents | Prompt review: injection-forgeable delimiters, stale "observe-only" Warden, high-rule benigns closing unseen, an inconclusive token theft | fixed |
 | 45 | 2026-11-21 | Detection | OrbStack's docker CLI tripped the credential rule 1,904 times a day; keychain reads of the gh token from an unknown parent | mitigated |
 | 44 | 2026-11-21 | Doctor | `doctor` warned "no ntfy topic configured" when bastiond pushes were off on purpose | fixed |
@@ -57,6 +59,59 @@ Status is one of: fixed, mitigated, documented, open.
 | 1 | 2026-10-31 | Build | Small build and test failures during development | fixed |
 
 ---
+
+## 48. First real-API synthetic eval: 47/51
+
+**Symptom.** `bastion-core eval --synthetic` on the Mac (Haiku 5.5 / Sonnet 5.5 through the
+API, real tool loop) passed 47 of 51, where the session-based runs had passed 51/51 twice:
+T1, A7 and T10 failed hygiene (the analyst's summary was withheld by `safe_summary`), and A6
+came back *inconclusive* with every tool returning no records. Not graded, but visible in the
+report: Warden lowered 5 analyst *malicious* verdicts (fake password prompt, TCC write,
+listener, signed app reading secrets, tool-result injection) to *suspicious*, and turned the
+Backblaze backup's benign into suspicious.
+
+**Cause.** In the real tool loop Haiku quotes the commands it investigated (`curl … | bash`,
+`spctl --master-disable`) in the summary; the earlier runs, without a tool loop, didn't. The
+inconclusive rule didn't say that empty tool results aren't broken telemetry. Warden's
+prompt said it can't see tool results, so it discounted the analyst's tool-backed facts, and
+it lacked the analyst prompt's import/backup exception for reading another program's data.
+The eval report couldn't show a withheld summary, so the failing text was invisible.
+
+**Fix.** Analyst prompt: the summary never contains a command, flag, pipe, link or domain,
+even quoted (quote them in the reasoning), with examples; "tools that return no records are
+not broken telemetry". Warden: facts the analyst attributes to a named tool count as
+recorded evidence unless they contradict the detection; the import/sync/backup exception.
+The eval report now prints the withheld or unsafe summary. Session-based regression run v5:
+51/51. Status stays open until the real-API eval is re-run.
+
+Test: `test_withheld_summary_is_kept_for_the_eval_report`; the synthetic set itself.
+
+## 47. Keychain rule: git's gh credential helper and Claude Code's own login
+
+**Symptom.** 14 `Keychain Secrets Read With the security CLI` hits on Nov 23: 10 from
+`…/.vscode/extensions/anthropic.claude-code-2.1.330-darwin-arm64/resources/native-binary/claude`
+(`auth status --json`) reading `Claude Code-credentials`, and 4 reads of `gh:github.com`
+whose parent was `/bin/sh` or `/bin/bash` with command line
+`/bin/sh -c /opt/homebrew/bin/gh auth git-credential get …`. The 3 hits of Nov 21 (#45) were
+the same.
+
+**Cause.** git's credential helper is `!gh auth git-credential`, which git runs through
+`sh -c`; gh then reads its token. The recorded parent of `security` is the shell, not gh, so
+`filter_gh_cli` (parent ends with `/gh`) never matched. On Nov 21 this log said a shell
+exec-ing into gh would be recorded as gh; in practice the shell was what got recorded, and
+the parent command line (added to the report in #45) is what showed it. Claude Code keeps
+its login in the keychain and nothing filtered it.
+
+**Fix.** `filter_gh_git_credential_helper`: parent `/bin/sh|bash|zsh` whose whole command
+line matches `sh -c [/opt/homebrew/bin/|/usr/local/bin/]gh auth git-credential …` (no `;`,
+`&&`, pipes, `$( )` or redirects allowed after it), reading only `gh:github.com`.
+`filter_claude_code`: `Claude Code-credentials` read by `claude` from Claude Code's install
+locations only. Anything chained onto the helper, a gh from another folder, or another
+item read by the same binary still fires.
+
+Test: `test_git_credential_helper_token_read_is_filtered`,
+`test_spoofed_helper_parents_still_fire`, `test_claude_code_reading_its_own_login_is_filtered`,
+`test_claude_filter_is_only_for_its_own_item_and_locations`.
 
 ## 46. Prompt review: forgeable delimiters, stale "observe-only" Warden, high-rule benigns closing unseen, an inconclusive token theft
 
