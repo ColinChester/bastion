@@ -9,7 +9,7 @@ Status is one of: fixed, mitigated, documented, open.
 
 | # | Date | Area | Issue | Status |
 | --- | --- | --- | --- | --- |
-| 48 | 2026-11-23 | Agents | First real-API synthetic eval: 47/51 (summaries quoting commands, inconclusive on empty tools, Warden prompt gaps) | fixed, re-run pending |
+| 48 | 2026-11-23 | Agents | First real-API synthetic eval: 47/51 (summaries quoting commands, inconclusive on empty tools, Warden prompt gaps) | fixed |
 | 47 | 2026-11-23 | Detection | Keychain rule: git's gh credential helper and Claude Code's own login; parent shown as the shell, not gh | fixed |
 | 46 | 2026-11-21 | Agents | Prompt review: injection-forgeable delimiters, stale "observe-only" Warden, high-rule benigns closing unseen, an inconclusive token theft | fixed |
 | 45 | 2026-11-21 | Detection | OrbStack's docker CLI tripped the credential rule 1,904 times a day; keychain reads of the gh token from an unknown parent | mitigated |
@@ -82,7 +82,7 @@ even quoted (quote them in the reasoning), with examples; "tools that return no 
 not broken telemetry". Warden: facts the analyst attributes to a named tool count as
 recorded evidence unless they contradict the detection; the import/sync/backup exception.
 The eval report now prints the withheld or unsafe summary. Session-based regression run v5:
-51/51. Status stays open until the real-API eval is re-run.
+51/51. Real-API re-run on the Mac (Nov 23, `ffb031d`): **51/51**, $0.56.
 
 Test: `test_withheld_summary_is_kept_for_the_eval_report`; the synthetic set itself.
 

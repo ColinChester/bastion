@@ -82,6 +82,7 @@ the real agent loop with the API, tools answered from the recorded results.
 | v4 | unchanged | 51 | **51** | none (one keyword-match miss in a soft check) |
 | API 1 (Nov 23, Mac, real tool loop) | v4 | 51 | 47 | T1, A7, T10 summaries quoted commands (withheld by code); A6 inconclusive on empty tools. Warden lowered 5 tool-backed malicious verdicts and flagged the Backblaze backup (issue #48) |
 | v5 | summary rule with examples, empty-tools rule; Warden credits tool-attributed facts, import/backup exception | 51 | **51** | none (regression check; the API run is the judge) |
+| API 2 (Nov 23, Mac, real tool loop) | v5 | 51 | **51** | none. $0.563. Warden still lowered T2 (fake password prompt, analyst malicious 0.85) to suspicious, and A6's analyst benign (0.70) ended suspicious; both are the cautious direction and within the case limits |
 
 In v3 and v4, every multi-stage chain (ClickFix, fake password prompt, Safari Storage
 dump, fake Apple agent, cookie thief, injected "IT script", tool-result injection, fake
